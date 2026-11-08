@@ -8,6 +8,7 @@ import MobileMenu from './MobileMenu.jsx';
 import { time } from './TrackRow.jsx';
 export default function AppDialogs({
   modal,
+  user,
   onClose,
   onLogin,
   onRegister,
@@ -58,6 +59,7 @@ export default function AppDialogs({
   onDetail,
   onRemoveFriend,
   onNavigate,
+  view,
   onInstall,
   onFavorites,
   installed,
@@ -69,7 +71,7 @@ export default function AppDialogs({
     locale
   } = useTranslation();
   if (!modal) return null;
-  if (modal.type === 'mobile-menu') return <MobileMenu user={user} installed={installed} downloadsCount={downloadsCount} incomingCount={incomingCount} onClose={onClose} onNavigate={onNavigate} onInstall={onInstall} onCreate={onNewPlaylist} onFavorites={onFavorites} />;
+  if (modal.type === 'mobile-menu') return <MobileMenu user={user} view={view} current={current} installed={installed} downloadsCount={downloadsCount} incomingCount={incomingCount} onClose={onClose} onNavigate={onNavigate} onInstall={onInstall} onCreate={onNewPlaylist} onFavorites={onFavorites} onDetail={onDetail} />;
   if (modal.type === 'guest') return <Modal title={t("Musikmu, ruangmu.")} onClose={onClose}><GuestPrompt feature={modal.feature} compact onLogin={onLogin} onRegister={onRegister} onDismiss={onClose} /></Modal>;
   if (modal.type === 'auth') return <Modal title={authMode === 'login' ? t("Selamat datang kembali.") : t("Ruang musik milikmu.")} onClose={onClose}>
     <div className="mb-5 flex rounded-[15px] bg-canvas p-1"><button type="button" onClick={() => {

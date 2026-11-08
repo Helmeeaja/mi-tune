@@ -1,6 +1,10 @@
 export const mobileTranslations = {
   'Beranda': 'Home',
   'Buka menu': 'Open menu',
+  'Navigasi utama': 'Main navigation',
+  'Kembali ke beranda': 'Back to home',
+  'Halaman ini mengalami error. Pemutar musik dan navigasi tetap bisa digunakan.': 'This page encountered an error. The music player and navigation are still available.',
+  'Menu ini mengalami error. Tutup menu untuk melanjutkan.': 'This menu encountered an error. Close it to continue.',
   'Pilih konten': 'Choose content',
   'Pilihan cepat': 'Quick picks',
   'Untukmu': 'For you',
