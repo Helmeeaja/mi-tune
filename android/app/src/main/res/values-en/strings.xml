@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Mi Tune</string>
+    <string name="server_title">Mi Tune address</string>
+    <string name="server_description">Enter a server address this device can reach. Audio still comes from the Mi Tune catalog.</string>
+    <string name="server_hint">https://your-mi-tune-server</string>
+    <string name="server_open">Open Mi Tune</string>
+    <string name="server_change">Change server address</string>
+    <string name="server_error">Couldn’t reach Mi Tune. Check your connection and make sure the server is running.</string>
+    <string name="webview_error">Update Android System WebView to use Mi Tune’s native player.</string>
+    <string name="notification_title">Now playing</string>
+</resources>

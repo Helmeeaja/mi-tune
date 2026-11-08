@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Mi Tune</string>
+    <string name="server_title">Alamat Mi Tune</string>
+    <string name="server_description">Masukkan alamat server yang bisa diakses perangkat ini. Audio tetap memakai katalog Mi Tune.</string>
+    <string name="server_hint">https://alamat-mi-tune</string>
+    <string name="server_open">Buka Mi Tune</string>
+    <string name="server_change">Ubah alamat server</string>
+    <string name="server_error">Alamat belum bisa dibuka. Periksa koneksi dan pastikan server Mi Tune aktif.</string>
+    <string name="webview_error">Perbarui Android System WebView untuk memakai player native Mi Tune.</string>
+    <string name="notification_title">Sedang diputar</string>
+</resources>
