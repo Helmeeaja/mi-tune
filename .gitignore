@@ -9,6 +9,7 @@ env/
 .[Ee][Nn][Vv].*
 *.env
 *.env.*
+!.env.example
 .envrc
 .dev.vars
 .dev.vars.*
@@ -50,7 +51,6 @@ cookies*.json
 *.db-*
 __pycache__/
 *.pyc
-[Rr][Ee][Aa][Dd][Mm][Ee]*
 test-results/
 playwright-report/
 coverage/
@@ -58,3 +58,6 @@ coverage/
 *.aab
 *.log
 *.hprof
+.vercel
+.env*
+!.env.example

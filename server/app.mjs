@@ -14,6 +14,7 @@ import { migrateSharingVisibility } from './migrations/004-sharing-visibility.mj
 import { createSharingService, visibility } from './sharing.mjs'
 import { migrateGoogleIdentity } from './migrations/005-google-identity.mjs'
 import { createGoogleAuth } from './google-auth.mjs'
+import { blobPersistenceEnabled, persistDatabase } from './persistence.mjs'
 import { publicProfile, privateProfile, validateProfilePatch, PROFILE_BODY_LIMIT } from './profile.mjs'
 
 const derive = promisify(scrypt)
@@ -105,6 +106,12 @@ export async function createApplication(options) {
   const sharing=createSharingService(db)
   migrateGoogleIdentity(db)
   const google=createGoogleAuth({db,...options.googleOAuth})
+  const storedTracks = db.prepare('SELECT data FROM tracks').all()
+  if (storedTracks.length) {
+    const restored = []
+    for (const row of storedTracks) { try { restored.push(JSON.parse(row.data)) } catch {} }
+    music.register?.(restored)
+  }
   const peers = new Set()
   const jobOwners = new Map()
   const limits = new Map()
@@ -603,6 +610,7 @@ export async function createApplication(options) {
           if (typeof music.stream === 'function') {
             try { if (await music.stream(song.id, req, res)) return }
             catch (error) {
+              console.error('Mi Tune direct stream failed:', error.code || error.message)
               if (res.headersSent || res.destroyed || req.aborted) return res.destroy()
               if ((error.status && error.status < 500) || /^(?:UNSAFE_|INVALID_|UNSUPPORTED_|NOT_MUSIC|DURATION_MISMATCH)/.test(error.code || '')) throw error
             }
@@ -614,7 +622,10 @@ export async function createApplication(options) {
             job = music.job(job.id) || job
           }
           if (res.destroyed) return
-          if (job.status !== 'ready') throw fail(502, 'AUDIO_NOT_READY', 'Lagu ini belum bisa diputar. Coba lagi sebentar.')
+          if (job.status !== 'ready') {
+            console.error('Mi Tune prepare failed:', job.error || job.stage)
+            throw fail(502, 'AUDIO_NOT_READY', 'Lagu ini belum bisa diputar. Coba lagi sebentar.')
+          }
           return audio(song.id, req, res)
         }
         if (songRoute[2] === 'download') {
@@ -808,6 +819,17 @@ export async function createApplication(options) {
     if (job.status === 'ready' && validTrack(job.track)) recordTracks([job.track])
   }
 
+  let lastPersistedMtime = 0
+  async function persist() {
+    if (!blobPersistenceEnabled()) return false
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    const stat = statSync(dbPath)
+    if (stat.mtimeMs === lastPersistedMtime) return false
+    const saved = await persistDatabase(dbPath)
+    if (saved) lastPersistedMtime = stat.mtimeMs
+    return saved
+  }
+
   async function close() {
     clearInterval(refreshTimer)
     for (const peer of peers) peer.res.end()
@@ -816,8 +838,9 @@ export async function createApplication(options) {
     catalogue?.close?.()
     podcasts?.close?.()
     if (server.listening) await new Promise(resolve => server.close(resolve))
+    await persist().catch(error => console.error('Mi Tune: final Blob persist failed:', error.message))
     db.close()
   }
 
-  return { server, notifyJob, refreshDiscovery, close }
+  return { server, notifyJob, refreshDiscovery, persist, close }
 }

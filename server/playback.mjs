@@ -7,11 +7,23 @@ function fail(status, code, message) {
   return error
 }
 
+const audioHosts = (process.env.MI_TUNE_AUDIO_HOSTS || 'chocolatemoo53.com')
+  .split(',')
+  .map(value => value.trim().toLowerCase())
+  .filter(Boolean)
+
+function allowedAudioHost(hostname) {
+  const host = hostname.toLowerCase()
+  if (host.endsWith('.googlevideo.com')) return true
+  return audioHosts.some(suffix => host === suffix || host.endsWith(`.${suffix}`))
+}
+
 export function validatePlaybackUrl(value) {
   let url
   try { url = new URL(value) }
   catch { throw fail(502, 'UNSAFE_AUDIO_SOURCE', 'Sumber audio ini belum bisa dihubungkan.') }
-  if (url.protocol !== 'https:' || url.username || url.password || url.port || !url.hostname.endsWith('.googlevideo.com') || url.pathname !== '/videoplayback') throw fail(502, 'UNSAFE_AUDIO_SOURCE', 'Sumber audio ini belum bisa dihubungkan.')
+  const allowedPath = url.pathname === '/videoplayback' || url.pathname === '/latest_version'
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || !allowedAudioHost(url.hostname) || !allowedPath) throw fail(502, 'UNSAFE_AUDIO_SOURCE', 'Sumber audio ini belum bisa dihubungkan.')
   return url
 }
 

@@ -57,7 +57,7 @@ export function createYoutubeService(options = {}) {
   const executable = options.executable || process.env.YT_DLP_BINARY || 'yt-dlp'
   const python = options.pythonBinary || process.env.MUSIC_PYTHON || join(project, '.venv/bin/python')
   const maxPending = options.maxPending || 5
-  const maxCacheBytes = options.maxCacheBytes || 1073741824
+  const maxCacheBytes = options.maxCacheBytes || Number(process.env.MI_TUNE_MAX_CACHE_BYTES) || 1073741824
   const tracks = new Map()
   const searches = new Map()
   const inFlight = new Map()
@@ -158,6 +158,7 @@ export function createYoutubeService(options = {}) {
         if (expired) return reject(fail(504, 'SOURCE_TIMEOUT', 'Sumber musik terlalu lama merespons. Coba lagi.'))
         if (code !== 0) {
           const detail = stderr.replace(/https?:\/\/\S+/g, '[tautan sumber]').trim().slice(-450)
+          if (process.env.SOURCE_DEBUG === '1') console.error('Mi Tune source stderr:', stderr.replace(/https?:\/\/\S+/g, '[tautan sumber]').trim().slice(-3000))
           return reject(fail(502, 'SOURCE_UNAVAILABLE', detail || 'Sumber musik tidak dapat diakses saat ini.'))
         }
         resolve(stdout)
@@ -165,7 +166,43 @@ export function createYoutubeService(options = {}) {
     })
   }
 
-  const common = ['--ignore-config', '--no-cache-dir', '--no-playlist', '--socket-timeout', '15', '--retries', '1', '--extractor-retries', '1', '--js-runtimes', 'node']
+  const playerClient = process.env.YT_DLP_PLAYER_CLIENT || ''
+  const common = ['--ignore-config', '--no-cache-dir', '--no-playlist', '--socket-timeout', '15', '--retries', '1', '--extractor-retries', '1', '--js-runtimes', 'node', ...(playerClient ? ['--extractor-args', `youtube:player_client=${playerClient}`] : [])]
+  const invidiousInstances = (options.invidiousInstances || process.env.INVIDIOUS_INSTANCES || '')
+    .split(',')
+    .map(value => value.trim().replace(/\/$/, ''))
+    .filter(value => /^https:\/\/[^\s]+$/.test(value))
+
+  async function invidiousSource(trackId, song) {
+    const id = validateTrackId(trackId)
+    for (const base of invidiousInstances) {
+      try {
+        const probe = `${base}/latest_version?id=${encodeURIComponent(id)}&itag=140&local=true`
+        const response = await (options.fetcher || fetch)(probe, {
+          method: 'GET',
+          headers: { Range: 'bytes=0-1', 'User-Agent': 'Mozilla/5.0', Referer: 'https://music.youtube.com/' },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(15000),
+        })
+        const type = (response.headers.get('content-type') || '').toLowerCase()
+        if ([200, 206].includes(response.status) && type.startsWith('audio/')) {
+          const url = response.url || probe
+          await response.body?.cancel()
+          let expiresAt = Date.now() + 600000
+          try {
+            const expiry = Number(new URL(url).searchParams.get('expire')) * 1000
+            if (expiry > 0) expiresAt = Math.min(expiresAt, expiry - 30000)
+          } catch {}
+          return { url, contentType: type.startsWith('audio/webm') ? 'audio/webm' : 'audio/mp4', expiresAt, track: { ...song } }
+        }
+        await response.body?.cancel()
+        if (process.env.SOURCE_DEBUG === '1') console.error('Mi Tune Invidious probe:', base, response.status, type)
+      } catch (error) {
+        if (process.env.SOURCE_DEBUG === '1') console.error('Mi Tune Invidious probe failed:', base, error.code || error.message, error.cause?.code || error.cause?.message || '')
+      }
+    }
+    return null
+  }
 
   async function search(query, { refresh = false } = {}) {
     if (typeof query !== 'string' || query.trim().length < 2 || query.length > 160 || /https?:\/\/|www\./i.test(query)) throw fail(400, 'INVALID_SEARCH', 'Cari judul lagu atau artis, bukan URL video. Gunakan 2–160 karakter.')
@@ -204,7 +241,17 @@ export function createYoutubeService(options = {}) {
     if (playbackRequests.size >= 2) throw fail(429, 'SOURCE_BUSY', 'Sumber musik sedang menyiapkan lagu lain. Coba lagi sebentar.')
     const pending = (async () => {
       const id = validateTrackId(trackId)
-      const info = JSON.parse(await run(executable, [...common, '--skip-download', '--dump-single-json', '-f', '140/bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/bestaudio', '--', `https://www.youtube.com/watch?v=${id}`], { timeout: 60000 }))
+      let info
+      try {
+        info = JSON.parse(await run(executable, [...common, '--skip-download', '--dump-single-json', '-f', '140/bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/bestaudio', '--', `https://www.youtube.com/watch?v=${id}`], { timeout: 60000 }))
+      } catch (error) {
+        const fallback = await invidiousSource(trackId, song)
+        if (!fallback) throw error
+        console.error('Mi Tune: yt-dlp diblokir, memakai sumber Invidious.')
+        playbackSources.set(trackId, fallback)
+        while (playbackSources.size > 64) playbackSources.delete(playbackSources.keys().next().value)
+        return fallback
+      }
       if (info.id !== id || info.is_live || info.has_drm || !Number.isFinite(info.duration) || info.duration < 15 || info.duration > 1800) throw fail(422, 'UNSUPPORTED_SONG', 'Lagu ini tidak dapat disiapkan: live, durasi di luar batas, atau format terlindungi.')
       if (Array.isArray(info.categories) && info.categories.length && !info.categories.includes('Music')) throw fail(422, 'NOT_MUSIC', 'Konten ini bukan kategori musik dan tidak dimasukkan ke Mi Tune.')
       if (Math.abs(info.duration - song.duration) > Math.max(10, song.duration * 0.1)) throw fail(422, 'DURATION_MISMATCH', 'Versi audio tidak cocok dengan lagu di katalog.')
@@ -220,6 +267,14 @@ export function createYoutubeService(options = {}) {
         if (info.filesize && info.filesize > 67108864) throw fail(422, 'AUDIO_TOO_LARGE', 'Ukuran audio melewati batas Mi Tune.')
         url = source.href
         contentType = info.ext === 'm4a' ? 'audio/mp4' : 'audio/webm'
+      }
+      if (!url) {
+        const fallback = await invidiousSource(trackId, song)
+        if (fallback) {
+          url = fallback.url
+          contentType = fallback.contentType
+          expiresAt = fallback.expiresAt
+        }
       }
       tracks.set(trackId, updated)
       save()
