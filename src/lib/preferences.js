@@ -105,6 +105,10 @@ export function applySettings(value) {
   const surface = custom ? mix(canvas, '#ffffff', paletteDark ? 0.075 : 0.2) : dark ? '#2b2825' : '#fbf8f2'
   const ink = settings.textColor || (paletteDark ? '#f4eade' : '#302c29')
   root.style.setProperty('--color-canvas', canvas)
+  const themeMeta = document.querySelector('meta[name="theme-color"]')
+  if (themeMeta) themeMeta.setAttribute('content', canvas)
+  const statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+  if (statusMeta) statusMeta.setAttribute('content', dark ? 'black-translucent' : 'default')
   root.style.setProperty('--color-surface', surface)
   root.style.setProperty('--color-ink', ink)
   root.style.setProperty('--color-muted', settings.textColor || (custom ? readableAccent(mix(ink, surface, 0.3), surface) : dark ? '#beb2a6' : '#6b6158'))

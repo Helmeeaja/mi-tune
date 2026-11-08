@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "container",
   "regions": [
-    "sin1"
+    "sfo1"
   ]
 }

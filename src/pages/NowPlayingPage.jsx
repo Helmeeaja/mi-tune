@@ -118,7 +118,10 @@ export default function NowPlayingPage({
         document.documentElement.style.setProperty('--shell-header-height', `${headerHeight}px`);
         const top = Math.max(headerHeight + 12, container.getBoundingClientRect().top);
         const bottom = dock?.getBoundingClientRect().top || window.innerHeight - 96;
-        const height = Math.max(140, Math.min(578, Math.floor(bottom - top - (footer?.offsetHeight || 48) - 16)));
+        const mobile = window.matchMedia('(max-width: 1023px)').matches;
+        const viewportHeight = window.visualViewport?.height || window.innerHeight;
+        const navigationHeight = document.querySelector('.mobile-nav')?.getBoundingClientRect().height || 68;
+        const height = mobile ? Math.max(220, Math.min(440, Math.floor(viewportHeight - headerHeight - navigationHeight - (footer?.offsetHeight || 48) - 40))) : Math.max(140, Math.min(578, Math.floor(bottom - top - (footer?.offsetHeight || 48) - 16)));
         if (container.style.height !== `${height}px`) container.style.height = `${height}px`;
         const list = container.querySelector('[data-lyric-lines]');
         if (list?.children.length) {

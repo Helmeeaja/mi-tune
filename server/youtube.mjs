@@ -159,7 +159,9 @@ export function createYoutubeService(options = {}) {
         if (code !== 0) {
           const detail = stderr.replace(/https?:\/\/\S+/g, '[tautan sumber]').trim().slice(-450)
           if (process.env.SOURCE_DEBUG === '1') console.error('Mi Tune source stderr:', stderr.replace(/https?:\/\/\S+/g, '[tautan sumber]').trim().slice(-3000))
-          return reject(fail(502, 'SOURCE_UNAVAILABLE', detail || 'Sumber musik tidak dapat diakses saat ini.'))
+          if (/sign in to confirm|not a bot|HTTP Error (403|429)|too many requests|request blocked/i.test(stderr)) return reject(fail(503, 'SOURCE_RESTRICTED', 'Sumber audio membatasi koneksi server. Lagu tidak dapat diputar dari host ini saat ini.'))
+          if (/requested format is not available|only images are available|no video formats found/i.test(stderr)) return reject(fail(503, 'AUDIO_FORMAT_UNAVAILABLE', 'Sumber belum menyediakan format audio yang bisa diakses server ini.'))
+          return reject(fail(502, 'SOURCE_UNAVAILABLE', process.env.NODE_ENV === 'production' ? 'Sumber musik tidak dapat diakses saat ini. Coba lagi nanti.' : detail || 'Sumber musik tidak dapat diakses saat ini.'))
         }
         resolve(stdout)
       })
@@ -167,7 +169,7 @@ export function createYoutubeService(options = {}) {
   }
 
   const playerClient = process.env.YT_DLP_PLAYER_CLIENT || ''
-  const common = ['--ignore-config', '--no-cache-dir', '--no-playlist', '--socket-timeout', '15', '--retries', '1', '--extractor-retries', '1', '--js-runtimes', 'node', ...(playerClient ? ['--extractor-args', `youtube:player_client=${playerClient}`] : [])]
+  const common = ['--ignore-config', '--no-plugin-dirs', '--no-cache-dir', '--no-playlist', '--force-ipv4', '--socket-timeout', '15', '--retries', '1', '--extractor-retries', '1', '--no-js-runtimes', '--js-runtimes', 'node', '--no-remote-components', ...(playerClient ? ['--extractor-args', `youtube:player_client=${playerClient}`] : [])]
   const invidiousInstances = (options.invidiousInstances || process.env.INVIDIOUS_INSTANCES || '')
     .split(',')
     .map(value => value.trim().replace(/\/$/, ''))
@@ -288,7 +290,7 @@ export function createYoutubeService(options = {}) {
   }
 
   async function metadata(trackId) {
-    return (await playbackSource(trackId)).track
+    return registered(trackId)
   }
 
   async function preload(trackId) {

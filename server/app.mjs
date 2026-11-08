@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { isIP } from 'node:net'
 import { DatabaseSync } from 'node:sqlite'
 import { randomBytes, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
@@ -15,6 +16,7 @@ import { createSharingService, visibility } from './sharing.mjs'
 import { migrateGoogleIdentity } from './migrations/005-google-identity.mjs'
 import { createGoogleAuth } from './google-auth.mjs'
 import { blobPersistenceEnabled, persistDatabase } from './persistence.mjs'
+import { createMediaProof } from './media-proof.mjs'
 import { publicProfile, privateProfile, validateProfilePatch, PROFILE_BODY_LIMIT } from './profile.mjs'
 
 const derive = promisify(scrypt)
@@ -67,7 +69,7 @@ function albumSummary(value) {
   return { id: value.id, title: value.title, year: value.year, type: value.type, thumbnail: typeof value.thumbnail === 'string' ? value.thumbnail : '', coverUrl: `/api/albums/${encodeURIComponent(value.id)}/cover`, artists: Array.isArray(value.artists) ? value.artists : [] }
 }
 
-async function body(req, maximum = 32768) {
+async function parseBody(req, maximum = 32768) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw fail(415, 'JSON_REQUIRED', 'Gunakan data JSON.')
   let text = ''
   for await (const chunk of req) {
@@ -84,6 +86,8 @@ async function body(req, maximum = 32768) {
 export async function createApplication(options) {
   const { musicService: music, artistCatalog: catalogue, podcastService: podcasts, dataDir, distDir, origin, lyricsFetcher = fetchTrackLyrics, refreshIntervalMs = 300000 } = options
   if (!music || !dataDir) throw new Error('Sumber musik dan direktori data diperlukan.')
+  const mediaProof = createMediaProof(process.env.MI_TUNE_MEDIA_SIGNING_KEY || '', validTrack)
+  if (process.env.VERCEL === '1' && !mediaProof.enabled) throw new Error('MI_TUNE_MEDIA_SIGNING_KEY must be configured privately for Vercel playback.')
   mkdirSync(dataDir, { recursive: true, mode: 0o700 })
   chmodSync(dataDir, 0o700)
   const dbPath = join(dataDir, 'mi-tune.sqlite')
@@ -122,10 +126,26 @@ export async function createApplication(options) {
   const dummySalt = randomBytes(16).toString('hex')
   const dummyHash = await derive(randomBytes(24).toString('hex'), dummySalt, 64)
 
-  function send(res, data, status = 200) {
+  async function send(res, data, status = 200) {
+    if (blobPersistenceEnabled() && !['GET', 'HEAD'].includes(res.req?.method || 'GET')) {
+      try { await persist() }
+      catch {
+        if (res.destroyed) return
+        res.statusCode = 503
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify({ error: { code: 'PERSISTENCE_UNAVAILABLE', message: 'Penyimpanan belum dapat mengonfirmasi perubahan. Coba muat ulang sebentar lagi.' } }))
+        return
+      }
+    }
+    if (res.destroyed) return
     res.statusCode = status
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.end(JSON.stringify({ data }))
+    res.end(JSON.stringify({ data }, (key, value) => {
+      if (!mediaProof.enabled || !validTrack(value)) return value
+      const proof = mediaProof.sign(value)
+      if (!proof) return value
+      return { ...value, playbackToken: proof, coverUrl: `/api/tracks/${encodeURIComponent(value.id)}/cover?proof=${encodeURIComponent(proof)}` }
+    }))
   }
 
   function cookie(res, name, value, seconds) {
@@ -154,7 +174,9 @@ export async function createApplication(options) {
   }
 
   function rate(req, kind, maximum) {
-    const key = `${req.socket.remoteAddress}:${kind}`
+    const forwarded = process.env.VERCEL === '1' ? String(req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || '').split(',')[0].trim() : ''
+    const address = isIP(forwarded) ? forwarded : req.socket.remoteAddress
+    const key = `${address}:${kind}`
     const now = Date.now()
     let entry = limits.get(key)
     if (!entry || now - entry.at >= 60000) { entry = { at: now, count: 0 }; limits.set(key, entry) }
@@ -173,6 +195,18 @@ export async function createApplication(options) {
     music.register?.(tracks)
     const insert = db.prepare('INSERT INTO tracks(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data')
     for (const track of tracks) if (validTrack(track)) insert.run(track.id, JSON.stringify(track))
+  }
+
+  async function body(req, maximum = 32768) {
+    const value = await parseBody(req, maximum)
+    if (typeof value.mediaProof === 'string' && typeof value.trackId === 'string') {
+      if (!/^yt:[A-Za-z0-9_-]{11}$/.test(value.trackId)) throw fail(400, 'INVALID_TRACK', 'Identitas lagu tidak valid.')
+      const song = mediaProof.verify(value.mediaProof, value.trackId)
+      if (!song) throw fail(400, 'INVALID_MEDIA_PROOF', 'Informasi lagu perlu diperbarui. Cari atau buka lagu ini lagi.')
+      if (!db.prepare('SELECT 1 FROM tracks WHERE id=?').get(song.id)) recordTracks([music.lookup(song.id) || song])
+      else if (!music.lookup(song.id)) music.register?.([song])
+    }
+    return value
   }
 
   function recordArtist(value) {
@@ -359,7 +393,7 @@ export async function createApplication(options) {
     }
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Accept-Ranges', 'bytes')
-    res.setHeader('Cache-Control', 'public, max-age=86400')
+    res.setHeader('Cache-Control', 'private, no-store')
     if (range) { res.statusCode = 206; res.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${file.size}`); res.setHeader('Content-Length', range.end - range.start + 1) }
     else res.setHeader('Content-Length', file.size)
     if (req.method === 'HEAD') return res.end()
@@ -380,7 +414,8 @@ export async function createApplication(options) {
     }
     if (!existsSync(path)) throw fail(503, 'BUILD_REQUIRED', 'Build frontend Mi Tune belum tersedia.')
     res.setHeader('Content-Type', mimeTypes[extname(path)] || 'application/octet-stream')
-    res.setHeader('Cache-Control', pathname === '/sw.js' || extname(path) === '.html' ? 'no-cache' : 'public, max-age=86400')
+    res.setHeader('Cache-Control', pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : /\.(?:html|js|json|webmanifest)$/.test(path) ? 'no-cache' : 'public, max-age=86400')
+    if (pathname === '/sw.js') res.setHeader('Service-Worker-Allowed', '/')
     res.setHeader('Content-Length', statSync(path).size)
     if (req.method === 'HEAD') return res.end()
     const stream = createReadStream(path)
@@ -401,13 +436,24 @@ export async function createApplication(options) {
       try { pathname = decodeURIComponent(url.pathname) } catch { throw fail(400, 'INVALID_URL', 'Alamat tidak valid.') }
       if (pathname.includes('\0') || pathname.split('/').includes('..')) throw fail(403, 'FORBIDDEN_PATH', 'Alamat tidak diizinkan.')
       const method = req.method
+      const mediaRoute = /^\/api\/tracks\/(yt:[A-Za-z0-9_-]{11})(?:\/(?:cover|stream|playback|audio|download|lyrics))?$/.exec(pathname)
+      const proof = url.searchParams.get('proof')
+      if (mediaRoute && proof) {
+        const song = mediaProof.verify(proof, mediaRoute[1])
+        if (!song) throw fail(400, 'INVALID_MEDIA_PROOF', 'Informasi lagu perlu diperbarui. Cari atau buka lagu ini lagi.')
+        if (!music.lookup(song.id)) music.register?.([song])
+      }
       if (pathname === '/api/health' && method === 'GET') return send(res, { status: 'ok', source: 'youtube-music', songsOnly: true, podcastsAvailable: Boolean(podcasts) })
       if (!pathname.startsWith('/api/')) {
         if (!['GET', 'HEAD'].includes(method)) throw fail(405, 'METHOD_NOT_ALLOWED', 'Metode tidak diizinkan.')
         return staticFile(pathname, req, res)
       }
       if (!['GET', 'HEAD'].includes(method)) {
-        const allowed = [origin, `http://localhost:${req.socket.localPort}`, `http://127.0.0.1:${req.socket.localPort}`, 'http://localhost:5174', 'http://127.0.0.1:5174'].filter(Boolean)
+        const configuredOrigins = (process.env.APP_ALLOWED_ORIGINS || '').split(',').filter(Boolean).map(value => {
+          try { const target = new URL(value.trim()); return target.protocol === 'https:' && !target.username && !target.password && target.pathname === '/' && !target.search && !target.hash ? target.origin : null } catch { return null }
+        }).filter(Boolean)
+        const developmentOrigins = process.env.NODE_ENV === 'production' ? [] : [`http://localhost:${req.socket.localPort}`, `http://127.0.0.1:${req.socket.localPort}`, 'http://localhost:5174', 'http://127.0.0.1:5174']
+        const allowed = [origin, ...configuredOrigins, ...developmentOrigins].filter(Boolean)
         if ((req.headers.origin && !allowed.includes(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') throw fail(403, 'INVALID_ORIGIN', 'Permintaan lintas situs tidak diizinkan.')
       }
       const who = identity(req, res)
@@ -425,6 +471,7 @@ export async function createApplication(options) {
           db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(Date.now())
           db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').run(digest(token),signed.user.id,Date.now()+SESSION_SECONDS*1000)
           cookie(res,'mt_session',token,SESSION_SECONDS)
+          await persist()
           res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end('<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Mi Tune</title><script src="/auth-google-complete.js" defer></script></head><body data-status="success"><p>Sudah masuk. Jendela ini bisa ditutup.</p></body></html>')
         }catch{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end('<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Mi Tune</title><script src="/auth-google-complete.js" defer></script></head><body data-status="failed"><p>Login belum berhasil. Coba lagi dari Mi Tune.</p></body></html>')}
       }
@@ -630,6 +677,18 @@ export async function createApplication(options) {
         }
         if (songRoute[2] === 'download') {
           requireUser(who)
+          if (url.searchParams.get('rightsConfirmed') !== '1' && !music.audio(song.id)) throw fail(400, 'RIGHTS_CONFIRMATION_REQUIRED', 'Konfirmasikan izin mengunduh audio ini.')
+          if (!music.audio(song.id)) {
+            rate(req, 'prepare', 12)
+            let job = await music.prepare(song.id)
+            const start = Date.now()
+            while (!['ready', 'failed'].includes(job.status) && !res.destroyed && Date.now() - start < 245000) {
+              await new Promise(resolve => setTimeout(resolve, 400))
+              job = music.job(job.id) || job
+            }
+            if (res.destroyed) return
+            if (job.status !== 'ready') throw fail(502, 'AUDIO_NOT_READY', 'Audio belum bisa disiapkan untuk unduhan. Coba lagi sebentar.')
+          }
           res.setHeader('Cache-Control', 'private, no-store')
           res.setHeader('Content-Disposition', `attachment; filename="mi-tune-${song.id.slice(3)}.mp3"`)
           return audio(song.id, req, res)
@@ -820,14 +879,19 @@ export async function createApplication(options) {
   }
 
   let lastPersistedMtime = 0
+  let persistenceRequest = null
   async function persist() {
     if (!blobPersistenceEnabled()) return false
+    if (persistenceRequest) { await persistenceRequest; return persist() }
     db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
     const stat = statSync(dbPath)
     if (stat.mtimeMs === lastPersistedMtime) return false
-    const saved = await persistDatabase(dbPath)
-    if (saved) lastPersistedMtime = stat.mtimeMs
-    return saved
+    persistenceRequest = persistDatabase(dbPath)
+    try {
+      const saved = await persistenceRequest
+      if (saved) lastPersistedMtime = stat.mtimeMs
+      return saved
+    } finally { persistenceRequest = null }
   }
 
   async function close() {

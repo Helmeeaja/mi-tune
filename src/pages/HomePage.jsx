@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import { Play, Pause, ArrowUpRight, ChevronRight, RefreshCw, Headphones, LoaderCircle, Sun, Sunset, Moon, CloudSun } from 'lucide-react'
 import { RecordStack } from '../components/MusicMotion.jsx'
 import TrackCard from '../components/TrackCard.jsx'
@@ -7,16 +8,26 @@ import { motionTokens, springs } from '../lib/motion.js'
 import Cover from '../components/Cover.jsx'
 import ChartSource from '../components/ChartSource.jsx'
 import { PodcastPreview } from '../components/PodcastCards.jsx'
+import MobileHome from '../components/MobileHome.jsx'
 
 export default function HomePage({ discovery, trending, trendingError, initialBusy, refreshBusy, current, playing, preparing, animations = true, onPlay, onOpen, onArtist, onRefresh, onSearch, onTrending, renderTracks, online, atmosphere, recommendations, podcasts, podcastBusy, podcastError, onPodcasts, onPodcastCreator, renderEpisodes, onEpisode, onPlayEpisode }) {
   const reduced = useReducedMotion()
   const { t, language, locale, date } = useTranslation()
+  const [desktop, setDesktop] = useState(() => window.matchMedia('(min-width: 1024px)').matches)
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)')
+    const update = () => setDesktop(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
   const { context, greeting } = atmosphere
   const featured = recommendations.tracks[0]
   const PeriodIcon = context.period === 'morning' ? Sun : context.period === 'afternoon' ? CloudSun : context.period === 'evening' ? Sunset : Moon
   const periodName = context.period === 'morning' ? t('Pagi') : context.period === 'afternoon' ? t('Siang') : context.period === 'evening' ? t('Sore') : t('Malam')
   const weekday = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date())
-  return <div data-page="home" data-context={context.key} data-context-stamp={context.stamp} className="space-y-9 sm:space-y-12">
+  return <div data-page="home" data-context={context.key} data-context-stamp={context.stamp} className="home-page">
+    {!desktop && <MobileHome discovery={discovery} trending={trending} trendingError={trendingError} initialBusy={initialBusy} refreshBusy={refreshBusy} current={current} playing={playing} preparing={preparing} onPlay={onPlay} onOpen={onOpen} onArtist={onArtist} onRefresh={onRefresh} onSearch={onSearch} onTrending={onTrending} renderTracks={renderTracks} online={online} atmosphere={atmosphere} recommendations={recommendations} podcasts={podcasts} podcastBusy={podcastBusy} podcastError={podcastError} onPodcasts={onPodcasts} onPodcastCreator={onPodcastCreator} onEpisode={onEpisode} onPlayEpisode={onPlayEpisode} />}
+    {desktop && <div className="desktop-home hidden space-y-9 sm:space-y-12 lg:block">
     <section data-period={context.period} data-mood={context.mood} className="clay-panel home-hero relative grid gap-6 overflow-hidden p-6 sm:p-9 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.9fr)] lg:items-center">
       <div className="relative z-10 max-w-lg">
         <div className="mb-5 flex flex-wrap items-center gap-2"><span className="grid size-7 place-items-center rounded-[10px] bg-surface/65 text-accent"><PeriodIcon size={15} /></span><span className="eyebrow">{weekday} · {periodName}</span></div>
@@ -58,6 +69,7 @@ export default function HomePage({ discovery, trending, trendingError, initialBu
       {initialBusy && !discovery.tracks.length ? <div className="grid grid-cols-2 gap-5 md:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="skeleton aspect-square" />)}</div> : discovery.tracks.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-4">{discovery.tracks.slice(0, 8).map(track => <TrackCard key={track.id} track={track} onPlay={() => onPlay(track, discovery.tracks)} onOpen={() => onOpen(track, discovery.tracks)} onArtist={onArtist} active={current?.id === track.id} playing={playing} busy={Boolean(preparing[track.id])} />)}</div> : <div className="clay-panel empty-state"><Headphones className="text-muted" size={30} /><h3 className="text-base font-bold">{t('Mulai dari lagu yang kamu suka')}</h3><p className="muted-copy">{t('Katalog belum tersedia. Cari judul atau nama artis untuk memulai.')}</p><button type="button" onClick={() => onSearch('lagu Indonesia')} className="clay-button">{t('Jelajahi musik Indonesia')}</button></div>}
 
     </section>
+    </div>}
   </div>
 }
 

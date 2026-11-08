@@ -7,7 +7,7 @@ function fail(status, code, message) {
   return error
 }
 
-const audioHosts = (process.env.MI_TUNE_AUDIO_HOSTS || 'chocolatemoo53.com')
+const audioHosts = (process.env.MI_TUNE_AUDIO_HOSTS || '')
   .split(',')
   .map(value => value.trim().toLowerCase())
   .filter(Boolean)
@@ -72,8 +72,11 @@ export async function proxyPlayback(req, res, resolveSource, fetcher = fetch) {
       await upstream.body?.cancel()
       throw fail(502, 'AUDIO_SOURCE_UNAVAILABLE', 'Sumber audio sedang sulit dihubungkan. Coba putar lagi sebentar.')
     }
-    const headers = { 'Content-Type': source.contentType, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=120', 'X-MiTune-Playback': 'direct' }
+    const receivedType = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+    if (!['audio/mp4', 'audio/x-m4a', 'audio/webm', 'video/mp4', 'application/octet-stream'].includes(receivedType)) { await upstream.body?.cancel(); throw fail(502, 'INVALID_AUDIO_RESPONSE', 'Sumber mengirim respons bukan audio. Coba lagi nanti.') }
+    const headers = { 'Content-Type': source.contentType, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'X-MiTune-Playback': 'direct' }
     const length = upstream.headers.get('content-length')
+    if (/^\d+$/.test(length || '') && Number(length) > 67108864) { await upstream.body?.cancel(); throw fail(422, 'AUDIO_TOO_LARGE', 'Ukuran audio melewati batas Mi Tune.') }
     const contentRange = upstream.headers.get('content-range')
     if (/^\d+$/.test(length || '')) headers['Content-Length'] = length
     if (upstream.status === 206) {

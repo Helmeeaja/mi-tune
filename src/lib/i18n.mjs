@@ -1,11 +1,12 @@
 import { interfaceTranslations } from './interface-translations.mjs'
 import { featureTranslations } from './feature-translations.mjs'
+import { mobileTranslations } from './mobile-translations.mjs'
 import { copywriting } from './copywriting.mjs'
 
 export const supportedLanguages = ['id', 'en']
 export const locales = { id: 'id-ID', en: 'en-US' }
 const idLabels = { 'Dawn': 'Fajar', 'After hours': 'Larut malam', 'Coast': 'Pesisir', 'Forest': 'Hutan', 'City': 'Kota', 'Mi Tune · make it yours': 'Mi Tune · ruangmu' }
-const englishTranslations = { ...interfaceTranslations, ...featureTranslations, ...Object.fromEntries(Object.entries(copywriting).map(([key, value]) => [key, value[1]])) }
+const englishTranslations = { ...interfaceTranslations, ...featureTranslations, ...mobileTranslations, ...Object.fromEntries(Object.entries(copywriting).map(([key, value]) => [key, value[1]])) }
 const indonesianTranslations = { ...idLabels, ...Object.fromEntries(Object.entries(copywriting).map(([key, value]) => [key, value[0]])) }
 const patterns = Object.keys(englishTranslations).filter(key => /\{[A-Za-z][A-Za-z0-9_]*\}/.test(key)).map(key => {
   const names = []

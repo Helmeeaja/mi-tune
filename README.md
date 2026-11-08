@@ -1,209 +1,133 @@
 # Mi Tune
 
-Mi Tune adalah aplikasi musik dan podcast untuk web/PWA, dengan APK Android sebagai pelengkap. Katalog lagu, metadata, pencarian, dan audio memakai integrasi YouTube Music yang sudah ada; podcast punya katalog, kreator, dan episode terpisah. Spotify hanya dipakai sebagai referensi urutan chart, bukan sumber audio.
+Mi Tune is a warm, terracotta-toned music and podcast application built with React and a Node/Python backend. It includes discovery, search, a shared audio-only player, lyrics, personal libraries and playlists, public profiles, friends, podcast episodes and a mobile-installable PWA.
 
-Aplikasi ini tidak memakai login/cookies akun YouTube dan tidak melewati DRM atau login wall.
+Production URL: https://mi-tune.vercel.app
 
-## Demo
+The music catalogue uses YouTube Music metadata through `ytmusicapi`. Audio extraction uses `yt-dlp`; this is an unofficial integration, not an official YouTube audio API. Spotify charts are used for ranking references only, never as an audio provider. Production playback and device installation must be checked on the deployed build; a successful build does not prove that the upstream audio provider accepts the host.
 
-- Web/PWA: <https://mi-tune.vercel.app>
-- Pencarian, chart, akun, playlist, podcast, dan PWA berjalan di Vercel.
-- Streaming audio dari YouTube dapat gagal di Vercel karena YouTube memblokir IP datacenter. Detail dan solusinya ada di [Catatan penting deployment Vercel](#catatan-penting-deployment-vercel).
+## Technologies
 
-## Fitur
+React 19, Vite 8, Tailwind CSS 4, Framer Motion, Lucide, Node.js 24 with `node:sqlite`, Python 3.10+, `ytmusicapi`, pinned `yt-dlp` with its EJS dependencies, FFmpeg/FFprobe, optional Google OAuth and private Vercel Blob snapshots.
 
-- Pencarian lagu YouTube Music dengan validasi `songs`, bukan video acak.
-- Pemutar penuh: play/pause, seek, volume, previous/next, shuffle, repeat, queue.
-- Chart global yang mengikuti referensi Top 50 Spotify, lalu dicocokkan ke hasil YouTube Music.
-- Lirik dari LRCLIB, sinkron dengan audio clock, plus impor LRC pribadi.
-- Koleksi: favorit, playlist public/private, cover playlist, profil publik.
-- Akun Mi Tune, sesi HttpOnly, pertemanan, dan SSE untuk pembaruan.
-- Podcast: discovery, kreator, show, episode, transkrip, resume, dan player yang sama.
-- PWA: manifest, service worker, instal, dan koleksi unduhan offline.
-- APK Android dengan Media3/ExoPlayer untuk pemutaran background.
+## Requirements and installation
 
-## Teknologi
+Install Node.js 24, pnpm 11.10.0, Python with venv support, and FFmpeg/FFprobe. Node 24 is also the JavaScript runtime used by the YouTube extractor. Linux system packages commonly include `python3-venv` and `ffmpeg`; install them with your distribution's package manager.
 
-React 19, Vite 8, Tailwind CSS v4, Framer Motion, Node.js 24, SQLite (`node:sqlite`), Python (`ytmusicapi`), `yt-dlp`, dan FFmpeg.
-
-## Menjalankan di lokal
-
-Prasyarat:
-
-- Node.js 24+
-- pnpm 11+
-- Python 3.10+
-- `yt-dlp` dan `ffmpeg` tersedia di `PATH`
-
-Langkah:
-
-```bash
-pnpm install
-pnpm setup:music          # membuat .venv dan memasang ytmusicapi
-cp .env.example .env      # opsional; ubah APP_ORIGIN bila perlu
+```sh
+pnpm install --frozen-lockfile
+pnpm setup:music
+cp .env.example .env
 pnpm build
 pnpm start
 ```
 
-Buka <http://127.0.0.1:5173>.
+Open http://127.0.0.1:5173. The Python setup now installs both catalogue and extractor dependencies in `.venv`; the environment example points `YT_DLP_BINARY` there. Do not commit your real `.env`.
 
-Mode development memakai dua terminal:
+For development, use two terminals:
 
-```bash
-pnpm server   # backend di 127.0.0.1:5173
-pnpm dev      # frontend di 127.0.0.1:5174, proxy /api ke backend
+```sh
+pnpm server
+pnpm dev
 ```
 
-Service worker hanya aktif pada build produksi, bukan mode dev. PWA di HP memerlukan origin HTTPS; `localhost` desktop dikecualikan oleh browser.
+The backend listens on 5173; Vite listens on 5174 and proxies `/api` to it. The service worker is only registered for production builds on HTTPS or a browser-trusted localhost origin.
 
-## Environment variables
+## Environment configuration
 
-Salin `.env.example` menjadi `.env`. Jangan commit `.env`.
+Configure runtime values in the hosting dashboard, not in client-side `VITE_` variables or committed files. Blank optional settings in `.env.example` are intentional.
 
-| Variabel | Wajib | Keterangan |
-| --- | --- | --- |
-| `APP_ORIGIN` | Production | Origin publik aplikasi, mis. `https://mi-tune.vercel.app`. Dipakai untuk cookie `Secure` dan redirect OAuth. |
-| `GOOGLE_CLIENT_ID` | Tidak | Client ID OAuth Google bertipe **Web application**. |
-| `GOOGLE_CLIENT_SECRET` | Tidak | Client secret OAuth Google. Jangan taruh di frontend. |
-| `GOOGLE_OAUTH_FILE` | Tidak | Path JSON client OAuth (`web`), alternatif dari dua variabel di atas. |
-| `MI_TUNE_DATA_DIR` | Tidak | Direktori data. Default `./data`. Di Vercel diarahkan ke `/tmp/mi-tune`. |
-| `HOST` / `PORT` | Tidak | Default `127.0.0.1:5173`. Container memakai `0.0.0.0:8080` atau `$PORT`. |
-| `CATALOG_REFRESH_MS` | Tidak | Interval refresh chart. Default 300000 (5 menit). |
-| `YT_DLP_BINARY` | Tidak | Path binary `yt-dlp` bila tidak ada di `PATH`. |
-| `YT_DLP_PLAYER_CLIENT` | Tidak | Daftar client `yt-dlp`, mis. `visionos` atau `web`. Kosong = default `yt-dlp`. |
-| `INVIDIOUS_INSTANCES` | Tidak | Daftar instance Invidious dipisah koma untuk fallback audio, mis. `https://invidious.example`. Kosong = fallback nonaktif. |
-| `MI_TUNE_AUDIO_HOSTS` | Tidak | Daftar domain tambahan yang boleh dipakai sebagai sumber audio (selain `*.googlevideo.com`). Default `chocolatemoo53.com`. |
-| `MUSIC_PYTHON` | Tidak | Path Python yang punya `ytmusicapi`. Default `.venv/bin/python`. |
-| `BLOB_READ_WRITE_TOKEN` | Vercel | Token Vercel Blob untuk menyimpan snapshot SQLite. Biasanya diisi otomatis saat store dihubungkan. |
-| `BLOB_STORE_ID` | Vercel | ID Blob store; dipakai bersama OIDC Vercel. |
+| Variable | Purpose |
+| --- | --- |
+| `APP_ORIGIN` | Exact public origin, production `https://mi-tune.vercel.app`; used for trusted writes, secure cookies and OAuth redirects. |
+| `APP_ALLOWED_ORIGINS` | Comma-separated additional trusted HTTPS origins; no wildcard. Leave empty unless needed. |
+| `HOST`, `PORT` | Local defaults `127.0.0.1:5173`; the container exposes `0.0.0.0:8080`. |
+| `MI_TUNE_DATA_DIR` | Local `./data`; the container uses `/var/lib/mi-tune` on a persistent host and `/tmp/mi-tune` on Vercel. |
+| `MUSIC_PYTHON` | Python containing catalogue dependencies; container `/app/.venv/bin/python`. |
+| `YT_DLP_BINARY` | Extractor executable; local `./.venv/bin/yt-dlp`, container uses PATH. |
+| `YT_DLP_PLAYER_CLIENT` | Optional operator override. Empty uses the maintained extractor defaults. Do not assume a particular client bypasses restrictions. |
+| `INVIDIOUS_INSTANCES` | Optional explicitly trusted HTTPS fallback instances, comma-separated; disabled by default. |
+| `MI_TUNE_AUDIO_HOSTS` | Explicit additional audio-host allowlist; empty by default. Googlevideo hosts are validated separately. |
+| `SOURCE_DEBUG` | `1` enables bounded server-side extractor diagnostics. Keep `0` normally. Never publish logs without checking for private data. |
+| `CATALOG_REFRESH_MS` | Catalogue refresh interval, default 300000. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional server-only Google Web OAuth client. Local `GOOGLE_OAUTH_FILE` can refer to an owner-only JSON file instead. |
+| `BLOB_READ_WRITE_TOKEN` | Optional private Blob snapshot credential; use Vercel's environment configuration, never Git. |
+| `BLOB_STORE_ID`, `VERCEL_OIDC_TOKEN` | Alternative provider-managed Blob authentication; do not commit or manually copy deployment OIDC tokens. |
+| `MI_TUNE_BLOB_RESTORE` | `1` explicitly enables restoring a missing local database from Blob outside Vercel. Vercel restore is automatic. |
+| `MI_TUNE_MEDIA_SIGNING_KEY` | Required on Vercel: a private 32-byte base64url key, identical across production/preview, for verified song metadata across instances. Never put it in a `VITE_` variable or commit its value. |
 
-Google login bersifat opsional. Tanpa kredensial OAuth, halaman login Google tidak aktif, tetapi akun Mi Tune dengan username/password tetap berfungsi.
+Without Google credentials, username/password accounts remain available; Google sign-in is disabled. Google Cloud must list the actual HTTPS origin and `https://your-domain/api/auth/google/callback` as an authorized redirect URI. Do not send credentials in chat.
 
-## Deploy ke Vercel
+## Deployment
 
-Repo ini sudah menyertakan `Dockerfile.vercel` dan `vercel.json`. Vercel menjalankan aplikasi sebagai **Container Runtime** (beta) karena backend membutuhkan Python, `yt-dlp`, dan FFmpeg. Jangan mengubah project menjadi static site: API, SQLite, SSE, dan streaming audio akan hilang.
+### Vercel
 
-### 1. Login dan hubungkan project
+The root `Dockerfile` is the authoritative image. Set the Vercel framework to `container` and use `vercel.json`; a static frontend deployment cannot run the Python catalogue, extractor, SQLite backend, SSE or audio pipeline. The image installs pinned Python/EJS dependencies, Node 24 and FFmpeg, then builds the frontend with the frozen pnpm lockfile.
 
-```bash
-vercel login
-vercel link          # buat project baru, framework: container
-```
+Link the existing project using the Vercel CLI or dashboard, configure the production environment, and deploy:
 
-Atau hubungkan repo GitHub lewat dashboard Vercel. Jika Vercel salah mendeteksi framework, set:
-
-```bash
-vercel project update --framework container --yes
-```
-
-### 2. Buat Blob store untuk data
-
-Vercel Functions memakai filesystem sementara. Agar akun, playlist, favorit, dan session tidak hilang saat instance scale-down, aplikasi menyimpan snapshot SQLite ke Vercel Blob secara berkala.
-
-```bash
-vercel blob create-store mi-tune-data --access private --yes
-```
-
-Perintah ini menghubungkan store ke project dan menambahkan kredensial Blob. Aplikasi membaca `BLOB_READ_WRITE_TOKEN` atau pasangan `BLOB_STORE_ID` + OIDC.
-
-### 3. Set origin
-
-Setelah project punya domain produksi:
-
-```bash
-vercel env add APP_ORIGIN production
-# isi: https://<project>.vercel.app
-```
-
-`APP_ORIGIN` harus sama dengan origin yang dibuka pengguna. Untuk Google OAuth, daftarkan juga redirect URI:
-
-```text
-https://<project>.vercel.app/api/auth/google/callback
-```
-
-### 4. Deploy
-
-```bash
+```sh
+vercel link
 vercel --prod
 ```
 
-Build dilakukan di Vercel: frontend di-build, dependency Python dipasang, lalu image dijalankan sebagai Function. Cek kesehatan:
+Set `APP_ORIGIN=https://mi-tune.vercel.app`. Any other production alias that users open must be explicitly listed in `APP_ALLOWED_ORIGINS`. Development-only HTTP origins are not accepted in production. Attach a private Blob store if retaining the current SQLite snapshot mechanism.
+Configure `MI_TUNE_MEDIA_SIGNING_KEY` as an encrypted runtime variable before deploying. Generate it privately with Node's `crypto.randomBytes(32).toString('base64url')`; do not paste its value into chat or documentation. Local single-instance development can leave it empty.
 
-```bash
-curl https://<project>.vercel.app/api/health
-```
+Important limitations:
 
-### Catatan penting deployment Vercel
+- Container Runtime is beta; instances can scale down and have bounded request duration. Long podcast streams and in-memory job/SSE state need a persistent backend for dependable operation.
+- Vercel's local database and audio cache are ephemeral. Blob restores/snapshots are a personal single-writer workaround, not a transactional shared database. Concurrent instances can overwrite each other's changes. Independent backups and a real shared database are required before multi-user production use is considered safe.
+- Source availability depends on extractor compatibility, EJS/Node support, source formats, expiring URLs, networking and provider restrictions. A 403, 429 or bot-check response is an upstream restriction, not something a new deployment can guarantee to fix.
+- Moving to another cloud host alone does not guarantee YouTube access. Do not add cookies, hide an official video player or use random public proxies as a promised reliability fix.
+- Respect Vercel plan terms and provider/content rights. No guarantee of unrestricted full-catalogue streaming is implied.
 
-- Container Runtime masih **beta**. Perilakunya bisa berubah.
-- Filesystem hanya `/tmp` dan hilang saat instance berhenti. Snapshot SQLite disinkronkan ke Vercel Blob, tetapi ini dirancang untuk penggunaan personal/single-instance. Jika beberapa instance menulis bersamaan, perubahan terakhir bisa menimpa yang lain.
-- Function memiliki batas durasi (Hobby 300 detik). Lagu normal selesai dalam batas ini; podcast atau audio yang lebih panjang dari 5 menit bisa terputus di tengah streaming.
-- `yt-dlp` berjalan dari IP datacenter Vercel. YouTube sering membalas **429 / “Sign in to confirm you’re not a bot”** untuk IP seperti ini, sehingga **streaming audio bisa gagal** meskipun pencarian, chart, akun, dan playlist tetap berjalan. Ini batasan IP, bukan bug aplikasi.
-- Fallback `INVIDIOUS_INSTANCES` bisa dicoba, tetapi instance publik sering ikut memblokir IP datacenter. Solusi yang stabil: jalankan backend di VPS/host dengan IP non-datacenter, atau gunakan proxy/cookies YouTube di server. Jangan commit cookies atau kredensial ke repo.
-- Vercel Hobby ditujukan untuk proyek personal non-komersial. Tinjau ketentuan Vercel dan hak konten sebelum memakai aplikasi secara publik.
+### Persistent container hosting
 
-## Google OAuth (opsional)
+The same image supports a conventional container host with a durable disk mounted at `/var/lib/mi-tune`. Run a single backend writer, preserve that volume across releases, configure HTTPS and the real `APP_ORIGIN`, and proxy the exposed port. Do not migrate onto an ephemeral disk or publicly expose a development laptop as a shortcut. Rehosting requires the owner's chosen service and authorization; this repository does not provision paid resources.
 
-1. Buat OAuth Client bertipe **Web application** di Google Cloud Console.
-2. Daftarkan redirect URI development: `http://127.0.0.1:5173/api/auth/google/callback`.
-3. Daftarkan redirect URI production: `https://<domain>/api/auth/google/callback`.
-4. Isi `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` di `.env` lokal atau Environment Variables Vercel.
-5. Restart/redeploy.
+## Mobile and PWA
 
-Jangan pernah mengirim client secret ke chat, commit ke repo, atau memasukkannya ke kode frontend. Endpoint `/api/auth/google/config` hanya mengembalikan status kesiapan dan URL, bukan secret.
+The mobile interface retains Mi Tune's ivory/clay identity and uses a compact bottom-navigation/player layout, intentional content rails, touch-sized controls and mobile-specific page composition. Desktop remains the existing sidebar-oriented application.
 
-## Android
+The manifest, application icons and service worker provide a standalone installable shell. Android browsers that support `beforeinstallprompt` can show the in-app installation action. On iPhone/iPad, use Safari's Share menu and Add to Home Screen where supported. Installation is only confirmed by the browser's actual installed/standalone state, not by dismissing or accepting a guide.
 
-APK debug berada di `android/app/build/outputs/apk/debug/app-debug.apk` setelah build. Wrapper Android memuat aplikasi dari alamat server yang dipilih di layar awal; alamat harus bisa diakses HP (bukan `localhost` desktop).
+Offline support caches application resources and permits reopening the shell. API requests, source streams and third-party provider data are not automatically cached. Explicit authorized downloads are separate from PWA shell caching. Search and uncached playback require a connection. Background audio and lock-screen behaviour in a PWA depend on browser/OS policy; the existing Android wrapper is a separate native option, not a guarantee for iOS.
+See [mobile/PWA details](docs/PWA.md) and [playback/deployment architecture](docs/ARCHITECTURE.md) for cache policy, icon regeneration, metadata transfer and the remaining production boundaries.
 
-Build dengan Android SDK 36 dan Gradle 9.1:
-
-```bash
-cd android
-gradle --no-daemon --max-workers=1 :app:assembleDebug :app:testDebugUnitTest
-```
-
-Pengujian perangkat fisik tetap diperlukan untuk memastikan audio background, notifikasi, dan pembatasan baterai OEM berjalan sesuai perangkat.
-
-## Struktur proyek
+## Project layout
 
 ```text
-server/            Backend HTTP, SQLite, auth, musik, podcast, lirik
-src/               React app, komponen, halaman, library frontend
-public/            Manifest, ikon, service worker helper, artwork
-scripts/           Build service worker, verifikasi, utilitas container
-android/           Wrapper Android/Media3
-tests/             Tes Node dan Playwright
-Dockerfile         Image produksi umum
-Dockerfile.vercel  Image untuk Vercel Container Runtime
-vercel.json        Konfigurasi project Vercel
+src/                 React pages, player, navigation and browser libraries
+server/              HTTP API, accounts, migrations, catalogue, audio and podcasts
+public/              Local artwork, manifest, application icons and registration
+docs/                Mobile/PWA and production architecture notes
+scripts/             Build/icon/container tools
+tests/               Maintained unit/integration and opt-in Playwright regressions
+android/             Optional Android/Media3 wrapper source
+.github/workflows/   Build and syntax checks
+Dockerfile           Single production image for Vercel and persistent hosts
+vercel.json          Container framework and deployment region
+.env.example         Empty/safe configuration template
 ```
 
-## API ringkas
+Generated bundles, virtual environments, node_modules, user databases/cache, real environment files, signing keys, credentials, APKs and test reports do not belong in Git or the Docker context. Maintained tests belong in Git; one-off browser probes and generated reports do not.
 
-Semua endpoint same-origin di `/api`. Respons sukses `{ "data": ... }`; error `{ "error": { "code", "message" } }`. Session memakai cookie HttpOnly; tidak ada token/password di `localStorage`.
+## Development checks
 
-- `GET /api/health`
-- `GET /api/auth/me`, `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`
-- `GET/PATCH /api/profile`, `POST /api/auth/password`
-- `GET /api/discover`, `GET /api/trending`, `GET /api/search?q=...`
-- `GET /api/tracks/:trackId`, `.../cover`, `.../stream`, `.../lyrics`, `.../download`
-- `POST /api/media/jobs`, `GET /api/media/jobs/:id`
-- `GET /api/library`, `POST /api/playlists`, `PATCH/DELETE /api/playlists/:id`, `PUT /api/playlists/:id/tracks`
-- `PUT /api/favorites/:trackId`
-- `GET /api/friends`, `POST /api/friend-requests`, `PATCH/DELETE /api/friend-requests/:id`
-- `GET /api/podcasts/discover`, `GET /api/podcasts/search`, `.../creators/:id`, `.../shows/:id`, `.../episodes/:id`
-- `GET /api/events` (SSE)
+```sh
+pnpm build
+pnpm test
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
 
-## Keamanan dan data
+The GitHub workflow performs a frozen install, build and backend syntax checks. Browser tests remain opt-in and may need local fixture services. The commands above are available to contributors; they are not evidence of tests being run on a release. Device installation, mobile layout, desktop regression and actual production music playback need user/device verification.
 
-- `.env`, `.env.local`, `data/`, database SQLite, token, dan file kredensial sudah di-ignore oleh Git.
-- Jangan commit `.env` atau JSON client OAuth. Gunakan `.env.example` sebagai template.
-- File yang sengaja **tidak** di-commit: `.env`, `.env.local`, file OAuth/cookies/token, `data/` (SQLite + cache media), `dist/`, `node_modules/`, `.venv/`, `.vercel/`, hasil test (`test-results/`, `playwright-report/`, `coverage/`), dan artefak build Android (`*.apk`, `*.aab`, `android/build/`).
-- File yang **di-commit** adalah source, konfigurasi, dokumentasi, aset publik, serta `Dockerfile`/`Dockerfile.vercel`/`vercel.json` yang dibutuhkan untuk build dan deploy.
-- Di Vercel, data pengguna disimpan di SQLite sementara dan disinkronkan ke Blob store private. Backup rutin tetap disarankan.
-- Integrasi YouTube Music/`yt-dlp` bersifat tidak resmi. Gunakan hanya untuk konten yang kamu miliki atau punya izin, dan patuhi ketentuan layanan penyedia.
+## API and troubleshooting
 
-## Lisensi
+API routes are same-origin `/api` and use `{ "data": ... }` responses or `{ "error": { "code", "message" } }`. Sessions use HttpOnly cookies. Principal routes include health, auth/profile, discover/trending/search, tracks/stream/lyrics, media jobs, library/playlists/favorites, friends, podcasts and `/api/events`.
 
-Belum ada lisensi open source yang ditetapkan. Tambahkan `LICENSE` sebelum mendistribusikan ulang.
+For audio failures, distinguish runtime dependencies, `SOURCE_RESTRICTED`, source format errors, expired upstream URLs and provider/network timeouts. The player must not report a generic success for a failed stream. Use bounded server diagnostics and the existing deployment logs without posting tokens or private database contents.
+
+See [SECURITY.md](SECURITY.md) for secret handling, snapshot risks and responsible reporting. The repository does not yet declare an open-source license; public visibility alone does not grant redistribution rights.

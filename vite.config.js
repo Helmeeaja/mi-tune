@@ -10,5 +10,13 @@ export default defineConfig({
     strictPort: true,
     proxy: { '/api': 'http://127.0.0.1:5173' },
   },
-  build: { sourcemap: false },
+  build: {
+    sourcemap: false,
+    rolldownOptions: {
+      onwarn(warning, handler) {
+        if (warning.code === 'MODULE_LEVEL_DIRECTIVE' && warning.message.includes('use client') && /(?:framer-motion|motion-dom|lucide-react)/.test(warning.id || warning.message)) return
+        handler(warning)
+      },
+    },
+  },
 })

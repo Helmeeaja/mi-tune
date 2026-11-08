@@ -22,24 +22,27 @@ export async function restoreDatabase(dbPath) {
   if (!shouldRestore()) return false
   try {
     const { list, get } = await blobSdk()
-    const { blobs } = await list({ prefix: 'mi-tune/', limit: 100 })
+    const { blobs, hasMore } = await list({ prefix: BLOB_PATH, limit: 100 })
+    if (hasMore) throw new Error('Database snapshot listing requires an explicit review.')
     const candidates = blobs
-      .filter(blob => blob.pathname === BLOB_PATH || blob.pathname.endsWith('/mi-tune.sqlite'))
+      .filter(blob => blob.pathname === BLOB_PATH)
       .sort((left, right) => new Date(right.uploadedAt).getTime() - new Date(left.uploadedAt).getTime())
     if (!candidates.length) return false
     const latest = candidates[0]
     const result = await get(latest.url, { access: 'private', useCache: false })
-    if (!result || result.statusCode !== 200 || !result.stream) return false
+    if (!result || result.statusCode !== 200 || !result.stream) throw new Error('Stored database snapshot could not be read.')
     const chunks = []
     for await (const chunk of result.stream) chunks.push(Buffer.from(chunk))
-    if (!chunks.length) return false
+    if (!chunks.length) throw new Error('Stored database snapshot is empty.')
+    const bytes = Buffer.concat(chunks)
+    if (bytes.subarray(0, 16).toString('latin1') !== 'SQLite format 3\0') throw new Error('Stored database snapshot has an invalid format.')
     mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 })
-    writeFileSync(dbPath, Buffer.concat(chunks), { mode: 0o600 })
+    writeFileSync(dbPath, bytes, { mode: 0o600 })
     console.log(`Mi Tune: restored SQLite snapshot from Vercel Blob (${latest.pathname}).`)
     return true
   } catch (error) {
-    console.error('Mi Tune: Vercel Blob restore failed:', error.message)
-    return false
+    console.error('Mi Tune: database restore failed; existing snapshot has not been overwritten.')
+    throw new Error('Mi Tune could not restore its database. Check private Blob access before restarting.')
   }
 }
 

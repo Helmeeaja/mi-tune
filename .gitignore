@@ -20,6 +20,9 @@ env/
 .wrangler/
 .taste-skill/
 .hermes/
+.cache/
+.tmp/
+.temp/
 .gradle/
 .kotlin/
 .idea/
@@ -58,6 +61,10 @@ coverage/
 *.aab
 *.log
 *.hprof
-.vercel
-.env*
-!.env.example
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+.DS_Store
+Thumbs.db

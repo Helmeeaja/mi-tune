@@ -11,6 +11,7 @@ import TrackRow from './components/TrackRow.jsx'
 import Sidebar, { MobileNavigation } from './components/Sidebar.jsx'
 import Header from './components/Header.jsx'
 import PlayerDock from './components/PlayerDock.jsx'
+import PwaUpdateNotice from './components/PwaUpdateNotice.jsx'
 import SmoothScroll from './components/SmoothScroll.jsx'
 import GuestPrompt from './components/GuestPrompt.jsx'
 import { defaultSettings, readSettings, saveSettings, applySettings, normalizeSettings } from './lib/preferences.js'
@@ -217,7 +218,7 @@ export default function App() {
   const [downloadProgress, setDownloadProgress] = useState({})
   const [rightsConfirmed, setRightsConfirmed] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(window.miTuneInstallPrompt || null)
-  const [installed, setInstalled] = useState(hasNativePlayer() || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true || read('mi-tune-installed',false)===true)
+  const [installed, setInstalled] = useState(hasNativePlayer() || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true)
   const audio = useRef(null)
   const playRequest = useRef(0)
   const searchRequest = useRef(0)
@@ -232,7 +233,6 @@ export default function App() {
   const preloaded = useRef(null)
   const authReturn = useRef(new URLSearchParams(location.search).get('next') || '/')
   const settingsRef = useRef(settings)
-  const jobs = useRef(new Map())
   const downloadControllers = useRef(new Map())
   const currentRef = useRef(null)
   const queueRef = useRef(queue)
@@ -687,7 +687,7 @@ export default function App() {
     if (local) { setDetail(local); setDetailBusy(false); return }
     setDetail(null)
     setDetailBusy(true)
-    request(`/tracks/${encodeURIComponent(detailId)}`).then(track => {
+    request(`/tracks/${encodeURIComponent(detailId)}`, { mediaProof: known.current.get(detailId)?.playbackToken }).then(track => {
       if (!cancelled) { remember([track]); setDetail(track) }
     }).catch(error => { if (!cancelled) setDetailError(errorMessage(error)) }).finally(() => { if (!cancelled) setDetailBusy(false) })
     return () => { cancelled = true }
@@ -728,7 +728,7 @@ export default function App() {
       const refresh = lyricRefreshTarget.current === track.id
       const cached = lyricCache.current.get(track.id)
       if (!refresh && cached && Date.now() - cached.time < (cached.data.matched ? 3600000 : 120000)) return cached.data
-      const data = await request(`/tracks/${encodeURIComponent(track.id)}/lyrics${refresh ? '?refresh=1' : ''}`)
+      const data = await request(`/tracks/${encodeURIComponent(track.id)}/lyrics${refresh ? '?refresh=1' : ''}`, { mediaProof: track.playbackToken })
       if (data.trackId && data.trackId !== track.id) return emptyLyrics
       lyricCache.current.set(track.id, { data, time: Date.now() })
       if (lyricRefreshTarget.current === track.id) lyricRefreshTarget.current = null
@@ -989,38 +989,6 @@ export default function App() {
     } catch (error) { notify(errorMessage(error), 'error') } finally { setRefreshBusy(false) }
   }
 
-  async function ensureAudio(track, purpose = 'download') {
-    const downloaded = await getDownload(track.id, ownerRef.current).catch(() => null)
-    if (downloaded) return downloaded.track
-    const fresh = known.current.get(track.id) || track
-    if (fresh.audioReady || fresh.fileSize > 0) return fresh
-    if (!navigator.onLine) throw new Error('Lagu ini belum diunduh. Hubungkan internet untuk memutarnya.')
-    const key = `${purpose}:${track.id}`
-    if (jobs.current.has(key)) return jobs.current.get(key)
-    const pending = (async () => {
-      setPreparing(previous => ({ ...previous, [track.id]: true }))
-      try {
-        let job = await request('/media/jobs', { method: 'POST', body: purpose === 'download' ? { trackId: track.id, purpose: 'download', rightsConfirmed: true } : { trackId: track.id, purpose: 'playback' } })
-        const deadline = Date.now() + 300000
-        while (Date.now() < deadline) {
-          if (!alive.current) throw new Error('Pemutaran dibatalkan.')
-          if (purpose === 'playback' && currentRef.current?.id === track.id) setPlayerStatus(job.stage || (job.status === 'queued' ? 'Audio sedang diantrekan…' : job.status === 'converting' ? 'Mengoptimalkan audio…' : 'Memuat audio lagu…'))
-          if (purpose === 'download') setDownloadProgress(previous => ({ ...previous, [track.id]: Math.max(0, Math.min(95, job.progress || 0)) }))
-          if (job.status === 'failed') throw new Error(job.error || 'Audio belum dapat disiapkan. Coba lagi.')
-          if (job.status === 'ready') { remember([job.track]); return job.track }
-          await new Promise(resolve => setTimeout(resolve, 750))
-          job = await request(`/media/jobs/${job.id}`)
-        }
-        throw new Error('Pemuatan audio memerlukan waktu lebih lama. Coba putar lagi nanti.')
-      } finally {
-        setPreparing(previous => { const updated = { ...previous }; delete updated[track.id]; return updated })
-        jobs.current.delete(key)
-      }
-    })()
-    jobs.current.set(key, pending)
-    return pending
-  }
-
   function clearLoading() {
     clearTimeout(loadingTimer.current)
     setPlayerLoading(false)
@@ -1179,11 +1147,11 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         if (downloads.some(item => item.available !== false && item.track.id === nextTrack.id)) return
-        const result = await request('/media/preload', { method: 'POST', body: { trackId: nextTrack.id }, signal: controller.signal })
+        const result = await request('/media/preload', { method: 'POST', body: { trackId: nextTrack.id }, mediaProof: nextTrack.playbackToken, signal: controller.signal })
         if (controller.signal.aborted || !result.ready) return
         preloaded.current = nextTrack.id
         if (warmAudio.current) {
-          warmAudio.current.src = `/api/tracks/${encodeURIComponent(nextTrack.id)}/stream`
+          warmAudio.current.src = mediaPath(nextTrack)
           warmAudio.current.load()
         }
       } catch { }
@@ -1252,7 +1220,7 @@ export default function App() {
     const liked = !library.favoriteIds.includes(track.id)
     setLibraryError('')
     try {
-      await request(`/favorites/${encodeURIComponent(track.id)}`, { method: 'PUT', body: { liked } })
+      await request(`/favorites/${encodeURIComponent(track.id)}`, { method: 'PUT', body: { liked, trackId: track.id, mediaProof: track.playbackToken } })
       await refreshLibrary()
     } catch (error) { setLibraryError(errorMessage(error)); notify(errorMessage(error), 'error') }
   }
@@ -1273,7 +1241,7 @@ export default function App() {
     const track = modal.track
     try {
       const created = await request('/playlists', { method: 'POST', body: { name: playlistName.trim(), cover: null } })
-      if (track) await request(`/playlists/${created.id}/tracks`, { method: 'PUT', body: { trackIds: [track.id] } })
+      if (track) await request(`/playlists/${created.id}/tracks`, { method: 'PUT', body: { trackIds: [track.id], trackId: track.id, mediaProof: track.playbackToken } })
       await refreshLibrary()
       setModal(null)
       if (view === 'library') setSelectedPlaylist(created.id)
@@ -1285,7 +1253,7 @@ export default function App() {
     if (!requireAccount('playlist')) return
     const trackIds = [...new Set([...playlist.trackIds, track.id])]
     try {
-      await request(`/playlists/${playlist.id}/tracks`, { method: 'PUT', body: { trackIds } })
+      await request(`/playlists/${playlist.id}/tracks`, { method: 'PUT', body: { trackIds, trackId: track.id, mediaProof: track.playbackToken } })
       await refreshLibrary()
       setModal(null)
       notify('Ditambahkan ke {name}.', 'info', { name: playlist.name })
@@ -1356,16 +1324,18 @@ export default function App() {
     downloadControllers.current.set(track.id, controller)
     setModal(null)
     setDownloadProgress(previous => ({ ...previous, [track.id]: 0 }))
+    setPreparing(previous => ({ ...previous, [track.id]: true }))
     try {
-      const prepared = await ensureAudio(track, 'download')
+      const prepared = known.current.get(track.id) || track
       let available = emptyLyrics
-      try { available = read(`mi-tune-lyrics:${owner}:${track.id}`, null) || await request(`/tracks/${encodeURIComponent(track.id)}/lyrics`) } catch { }
+      try { available = read(`mi-tune-lyrics:${owner}:${track.id}`, null) || await request(`/tracks/${encodeURIComponent(track.id)}/lyrics`, { mediaProof: track.playbackToken }) } catch { }
       await downloadTrack(prepared, available, { owner, signal: controller.signal, onProgress: progress => setDownloadProgress(previous => ({ ...previous, [track.id]: progress.percent ?? 0 })) })
       if (nativePlayer) await syncNativeDownload(prepared, owner)
       await refreshDownloads()
       notify('Siap didengar offline: {title}', 'info', { title: track.title })
     } catch (error) { notify(error.name === 'AbortError' ? 'Unduhan dibatalkan.' : errorMessage(error), 'error') } finally {
       downloadControllers.current.delete(track.id)
+      setPreparing(previous => { const updated = { ...previous }; delete updated[track.id]; return updated })
       setDownloadProgress(previous => { const updated = { ...previous }; delete updated[track.id]; return updated })
     }
   }
@@ -1520,11 +1490,16 @@ export default function App() {
   async function installApp() {
     if (installed) { notify('Mi Tune sudah terinstal.'); return }
     if (!installPrompt) { setModal({ type: 'install' }); return }
-    await installPrompt.prompt()
-    const choice = await installPrompt.userChoice
-    if (choice.outcome === 'accepted') setInstalled(true)
-    window.miTuneInstallPrompt = null
-    setInstallPrompt(null)
+    const prompt = installPrompt
+    try {
+      await prompt.prompt()
+      await prompt.userChoice
+    } catch (error) {
+      if (error.name !== 'AbortError') setModal({ type: 'install' })
+    } finally {
+      window.miTuneInstallPrompt = null
+      setInstallPrompt(null)
+    }
   }
 
   function tracksFor(ids) { return ids.map(id => known.current.get(id) || library.tracks.find(track => track.id === id)).filter(Boolean) }
@@ -1551,13 +1526,14 @@ export default function App() {
   const focusSearch = () => { document.getElementById('music-search')?.focus(); window.scrollTo({ top: 0, behavior: 'instant' }) }
   const openAuth = () => goAuth('login')
   const authPage = view === 'login' || view === 'register'
+  const fullPlayer = Boolean(current && ((view === 'now-playing' && detailId === current.id) || (view === 'podcast-episode' && podcastEpisodeId === current.id)))
 
   return <LanguageProvider language={settings.language}><MotionConfig reducedMotion={!settings.animations || reduced ? 'always' : 'user'} transition={springs.gentle}>
     <SmoothScroll enabled={settings.smoothScroll && settings.animations} />
     <a href="#main-content" className="sr-only fixed left-5 top-4 z-[80] rounded-xl bg-ink px-5 py-3 text-sm font-bold text-white focus:not-sr-only">{t('Lewati ke konten utama')}</a>
     {!authPage && <Sidebar installed={installed} view={view} user={user} library={library} tracksFor={tracksFor} selectedPlaylist={selectedPlaylist} onNavigate={navigate} onPlaylist={id => user ? navigate('library', id) : requireAccount(id === 'favorites' ? 'favorites' : 'playlist')} onCreate={() => createPlaylist()} onInstall={installApp} downloadsCount={user ? downloads.filter(item => item.available !== false).length : 0} incomingCount={friends.incoming.length} />}
-    <div className={authPage ? '' : 'lg:pl-[224px]'}>
-      <Header query={query} onQuery={setQuery} onSearch={searchMusic} searchBusy={searchBusy} user={user} authReady={authReady} online={online} onAuth={openAuth} onProfile={() => navigate('profile')} onSettings={() => navigate('settings')} onHome={() => authPage ? returnFromAuth() : navigate('discover')} authPage={authPage} />
+    <div className={`app-shell ${authPage ? '' : 'lg:pl-[224px]'}`} data-has-track={Boolean(current)} data-full-player={fullPlayer} data-auth-page={authPage}>
+      <Header view={view} onMenu={() => setModal({ type: 'mobile-menu' })} menuOpen={modal?.type === 'mobile-menu'} query={query} onQuery={setQuery} onSearch={searchMusic} searchBusy={searchBusy} user={user} authReady={authReady} online={online} onAuth={openAuth} onProfile={() => navigate('profile')} onSettings={() => navigate('settings')} onHome={() => authPage ? returnFromAuth() : navigate('discover')} authPage={authPage} />
       <main id="main-content" data-page={view} className="mx-auto max-w-[1230px] px-5 pb-[calc(190px_+_env(safe-area-inset-bottom))] pt-7 sm:px-8 sm:pt-8 lg:px-9 lg:pb-36">
         <Suspense fallback={<div role="status" className="clay-panel p-7 text-sm text-muted">{t('Memuat…')}</div>}>
         <AnimatePresence mode="wait" initial={false}>
@@ -1587,11 +1563,12 @@ export default function App() {
         {Object.keys(downloadProgress).length > 0 && <section aria-label={t('Proses unduhan')} className="clay-panel mt-7 p-5"><p className="eyebrow mb-4">{t('Menyiapkan musik offline')}</p>{Object.entries(downloadProgress).map(([id, progress]) => <div key={id} className="mb-4 last:mb-0"><div className="mb-2 flex justify-between gap-3 text-xs"><span className="truncate font-bold">{known.current.get(id)?.title || t('Lagu')}</span><span className="tabular-nums text-muted">{Math.round(progress)}%</span><button type="button" onClick={() => downloadControllers.current.get(id)?.abort()} className="text-accent">{t('Batal')}</button></div><progress value={progress} max="100" aria-label={t('Progres unduhan {title}', { title: known.current.get(id)?.title || t('Lagu') })} className="h-2 w-full overflow-hidden rounded-full accent-accent" /></div>)}</section>}
       </main>
     </div>
-    <PlayerDock onTranscript={() => { if (isPodcastEpisode(current)) { openPodcastEpisode(current); setPodcastTranscriptId(current.id) } else openTrack(current) }} track={current} playing={playing} position={position} duration={duration} volume={volume} muted={muted} shuffle={shuffle} repeat={repeat} busy={showLoading} status={playerStatus} favorite={library.favoriteIds.includes(current?.id)} onDetail={() => openTrack(current)} onPlay={togglePlayback} onSeek={seek} onPrevious={() => next(-1)} onNext={() => next(1)} onShuffle={() => setShuffle(value => !value)} onRepeat={cycleRepeat} onMute={() => setMuted(value => !value)} onVolume={changeVolume} onFavorite={() => current && toggleFavorite(current)} onQueue={() => setModal({ type: 'queue' })} standalone={authPage} />
+    <PlayerDock hideOnMobile={fullPlayer} error={playerError} onTranscript={() => { if (isPodcastEpisode(current)) { openPodcastEpisode(current); setPodcastTranscriptId(current.id) } else openTrack(current) }} track={current} playing={playing} position={position} duration={duration} volume={volume} muted={muted} shuffle={shuffle} repeat={repeat} busy={showLoading} status={playerStatus} favorite={library.favoriteIds.includes(current?.id)} onDetail={() => openTrack(current)} onPlay={togglePlayback} onSeek={seek} onPrevious={() => next(-1)} onNext={() => next(1)} onShuffle={() => setShuffle(value => !value)} onRepeat={cycleRepeat} onMute={() => setMuted(value => !value)} onVolume={changeVolume} onFavorite={() => current && toggleFavorite(current)} onQueue={() => setModal({ type: 'queue' })} standalone={authPage} />
     {!authPage && <MobileNavigation view={view} onNavigate={navigate} incomingCount={friends.incoming.length} />}
+    <PwaUpdateNotice playing={playing} visible={!toast && !modal} />
     {!nativePlayer && <audio ref={audio} preload="auto" onPlay={() => setPlaying(true)} onPlaying={clearLoading} onCanPlay={clearLoading} onWaiting={() => { setPlayerStatus('Sebentar, mengisi buffer…'); markLoading() }} onPause={() => { setPlaying(false); clearLoading() }} onTimeUpdate={event => setPosition(event.currentTarget.currentTime)} onSeeked={event => setPosition(event.currentTarget.currentTime)} onLoadedMetadata={event => { if (Number.isFinite(event.currentTarget.duration)) setDuration(event.currentTarget.duration) }} onEnded={() => { if (repeat === 'one') { seek(0); audio.current.play().catch(error => setPlayerError(errorMessage(error))) } else if (settingsRef.current.autoplayNext) next(1, true); else { setPlaying(false); clearLoading() } }} onError={() => { if (audio.current?.src && audio.current.error) { clearLoading(); setPlayerError('Lagu belum bisa diputar. Cek koneksi, lalu coba lagi.'); setPlaying(false) } }} />}
     {!nativePlayer && <audio ref={warmAudio} preload="metadata" aria-hidden="true" />}
     <AnimatePresence>{toast && <motion.div role={toast.tone === 'error' ? 'alert' : 'status'} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: motionTokens.duration.fast }} className="clay-panel fixed bottom-[calc(172px_+_env(safe-area-inset-bottom))] left-5 right-5 z-50 flex items-center gap-3 !rounded-[18px] px-4 py-3 text-xs leading-6 sm:left-auto sm:max-w-md lg:bottom-32"><Check size={17} className="shrink-0 text-accent" /><span className="flex-1">{t(toast.message, toast.values)}</span><button type="button" aria-label={t('Tutup notifikasi')} onClick={() => setToast(null)} className="icon-button !size-8"><X size={15} /></button></motion.div>}</AnimatePresence>
-    {modal && <Suspense fallback={null}><AppDialogs modal={modal} onClose={() => setModal(null)} onLogin={openAuth} onRegister={() => goAuth('register')} user={user} library={library} authMode={authMode} setAuthMode={setAuthMode} authError={authError} setAuthError={setAuthError} authBusy={authBusy} onAuth={submitAuth} playlistName={playlistName} setPlaylistName={setPlaylistName} playlistBusy={playlistBusy} playlistError={playlistError} onCreate={submitPlaylist} onNewPlaylist={createPlaylist} onAdd={addToPlaylist} onArtwork={saveArtwork} rename={rename} setRename={setRename} onRename={saveRename} onDeletePlaylist={deletePlaylist} rightsConfirmed={rightsConfirmed} setRightsConfirmed={setRightsConfirmed} onDownload={startDownload} onDeleteDownload={deleteDownload} onImportLyrics={importLyrics} queue={queue} setQueue={updateQueue} current={current} playing={playing} loading={playerLoading} position={position} duration={duration} volume={volume} muted={muted} shuffle={shuffle} repeat={repeat} onShuffle={() => setShuffle(value => !value)} onRepeat={cycleRepeat} onPrevious={() => next(-1)} onNext={() => next(1)} onPlay={play} onToggle={togglePlayback} onSeek={seek} onMute={() => setMuted(value => !value)} onVolume={changeVolume} onDetail={openTrack} onRemoveFriend={removeFriend} /></Suspense>}
+    {modal && <Suspense fallback={null}><AppDialogs onNavigate={navigate} onInstall={installApp} onFavorites={() => user ? navigate('library', 'favorites') : requireAccount('favorites')} installed={installed} downloadsCount={user ? downloads.filter(item => item.available !== false).length : 0} incomingCount={friends.incoming.length} modal={modal} onClose={() => setModal(null)} onLogin={openAuth} onRegister={() => goAuth('register')} user={user} library={library} authMode={authMode} setAuthMode={setAuthMode} authError={authError} setAuthError={setAuthError} authBusy={authBusy} onAuth={submitAuth} playlistName={playlistName} setPlaylistName={setPlaylistName} playlistBusy={playlistBusy} playlistError={playlistError} onCreate={submitPlaylist} onNewPlaylist={createPlaylist} onAdd={addToPlaylist} onArtwork={saveArtwork} rename={rename} setRename={setRename} onRename={saveRename} onDeletePlaylist={deletePlaylist} rightsConfirmed={rightsConfirmed} setRightsConfirmed={setRightsConfirmed} onDownload={startDownload} onDeleteDownload={deleteDownload} onImportLyrics={importLyrics} queue={queue} setQueue={updateQueue} current={current} playing={playing} loading={playerLoading} position={position} duration={duration} volume={volume} muted={muted} shuffle={shuffle} repeat={repeat} onShuffle={() => setShuffle(value => !value)} onRepeat={cycleRepeat} onPrevious={() => next(-1)} onNext={() => next(1)} onPlay={play} onToggle={togglePlayback} onSeek={seek} onMute={() => setMuted(value => !value)} onVolume={changeVolume} onDetail={openTrack} onRemoveFriend={removeFriend} /></Suspense>}
   </MotionConfig></LanguageProvider>
 }

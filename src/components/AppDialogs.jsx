@@ -4,6 +4,7 @@ import Modal from './Modal.jsx';
 import GuestPrompt from './GuestPrompt.jsx';
 import Cover from './Cover.jsx';
 import PlaylistArtworkEditor from './PlaylistArtworkEditor.jsx';
+import MobileMenu from './MobileMenu.jsx';
 import { time } from './TrackRow.jsx';
 export default function AppDialogs({
   modal,
@@ -55,13 +56,20 @@ export default function AppDialogs({
   onMute,
   onVolume,
   onDetail,
-  onRemoveFriend
+  onRemoveFriend,
+  onNavigate,
+  onInstall,
+  onFavorites,
+  installed,
+  downloadsCount,
+  incomingCount
 }) {
   const {
     t,
     locale
   } = useTranslation();
   if (!modal) return null;
+  if (modal.type === 'mobile-menu') return <MobileMenu user={user} installed={installed} downloadsCount={downloadsCount} incomingCount={incomingCount} onClose={onClose} onNavigate={onNavigate} onInstall={onInstall} onCreate={onNewPlaylist} onFavorites={onFavorites} />;
   if (modal.type === 'guest') return <Modal title={t("Musikmu, ruangmu.")} onClose={onClose}><GuestPrompt feature={modal.feature} compact onLogin={onLogin} onRegister={onRegister} onDismiss={onClose} /></Modal>;
   if (modal.type === 'auth') return <Modal title={authMode === 'login' ? t("Selamat datang kembali.") : t("Ruang musik milikmu.")} onClose={onClose}>
     <div className="mb-5 flex rounded-[15px] bg-canvas p-1"><button type="button" onClick={() => {
@@ -113,6 +121,6 @@ export default function AppDialogs({
         })} onClick={() => setQueue(previous => previous.filter(item => item.id !== track.id))} className="icon-button !size-8"><X size={14} /></button></div>)}</div> : <div className="empty-state !py-8"><span className="empty-icon"><ListMusic size={28} /></span><p className="muted-copy">{t("Belum ada lagu dalam antrean.")}</p></div>}
   </Modal>;
   if (modal.type === 'remove-friend') return <Modal title={t("Hapus pertemanan?")} onClose={onClose}><p className="muted-copy">{t("Hapus @")}{modal.person.username} {t("dari daftar teman?")}</p><div className="mt-6 flex gap-3"><button type="button" onClick={onClose} className="clay-button flex-1">{t("Batal")}</button><button type="button" onClick={() => onRemoveFriend(modal.person)} className="clay-button clay-primary flex-1">{t("Hapus teman")}</button></div></Modal>;
-  if (modal.type === 'install') return <Modal title={t("Mi Tune, lebih dekat.")} onClose={onClose}><span className="empty-icon mb-5"><ArrowDownToLine size={27} /></span><p className="muted-copy">{t("Untuk memasang Mi Tune, buka menu perangkat lalu pilih “Instal aplikasi” atau “Tambahkan ke layar utama”.")}</p><p className="mt-4 text-xs leading-6 text-muted">{t("Instalasi dan offline memerlukan HTTPS atau localhost. Pada HP, alamat LAN HTTP biasa tidak mendukungnya.")}</p><button type="button" onClick={onClose} className="clay-button clay-primary mt-6 w-full">{t("Mengerti")}</button></Modal>;
+  if (modal.type === 'install') return <Modal title={t("Mi Tune, lebih dekat.")} onClose={onClose}><div className="install-guide"><img src="/icons/icon-192.png" alt="" width="72" height="72" /><p className="muted-copy">{t('Buka Mi Tune langsung dari layar utama, tanpa tab browser.')}</p>{/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? <ol><li>{t('Buka situs ini di Safari.')}</li><li>{t('Ketuk Bagikan di toolbar browser.')}</li><li>{t('Pilih Tambahkan ke Layar Utama, lalu Tambahkan.')}</li></ol> : <ol><li>{t('Buka situs ini di Chrome atau Edge.')}</li><li>{t('Buka menu browser, lalu pilih Instal aplikasi atau Tambahkan ke layar utama.')}</li><li>{t('Konfirmasi instalasi, lalu buka ikon Mi Tune.')}</li></ol>}<p className="text-xs leading-6 text-muted">{t('Musik dan katalog tetap membutuhkan internet. App shell, pengaturan lokal, dan koleksi yang sudah tersimpan bisa dibuka offline.')}</p><p className="text-xs leading-6 text-muted">{t('Jika menu instalasi belum muncul, muat ulang setelah situs selesai dimuat. Instalasi memerlukan HTTPS.')}</p><button type="button" onClick={onClose} className="clay-button clay-primary w-full">{t("Mengerti")}</button></div></Modal>;
   return null;
 }

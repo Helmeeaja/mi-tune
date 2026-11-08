@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./mobile.css";
 
 @theme {
   --font-sans: "Manrope Variable", sans-serif;

@@ -26,7 +26,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt ./
 RUN python3 -m venv /app/.venv \
-    && /app/.venv/bin/pip install --no-cache-dir -r requirements.txt 'yt-dlp[default]==2026.08.19'
+    && /app/.venv/bin/pip install --no-cache-dir -r requirements.txt \
+    && /app/.venv/bin/yt-dlp --version \
+    && node --version \
+    && ffmpeg -version >/dev/null
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/dist ./dist

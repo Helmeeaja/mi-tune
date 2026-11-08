@@ -8,7 +8,8 @@ export function isPodcastEpisode(item) {
 export function mediaPath(item, offline = false) {
   if (isPodcastEpisode(item)) return `/api/podcasts/episodes/${encodeURIComponent(item.id)}/stream`
   if (!/^yt:[A-Za-z0-9_-]{11}$/.test(item?.id || '')) throw new Error('Audio tidak valid.')
-  return `/api/tracks/${encodeURIComponent(item.id)}/${offline ? 'audio' : 'stream'}`
+  const path = `/api/tracks/${encodeURIComponent(item.id)}/${offline ? 'audio' : 'stream'}`
+  return !offline && typeof item.playbackToken === 'string' ? `${path}?proof=${encodeURIComponent(item.playbackToken)}` : path
 }
 
 export function mediaDetailPath(item) {
