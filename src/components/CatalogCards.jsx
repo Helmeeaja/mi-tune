@@ -30,7 +30,7 @@ export function AlbumCard({ album, onAlbum }) {
 }
 
 export function ArtistNames({ track, onArtist, className = '' }) {
-  const refs = track?.artistRefs?.filter(artist => /^UC[A-Za-z0-9_-]{22}$/.test(artist.id) && artist.name) || []
+  const refs = track?.artistRefs?.filter(artist => /^(?:UC[A-Za-z0-9_-]{22}|audius:user:[A-Za-z0-9]{1,64})$/.test(artist.id) && artist.name) || []
   if (!refs.length || !onArtist) return <span className={className}>{track?.artist}</span>
   return <span className={className}>{refs.map((artist, index) => <span key={artist.id}>{index > 0 && ', '}<a href={`/artist/${encodeURIComponent(artist.id)}`} onClick={event => { event.stopPropagation(); if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onArtist(artist) }} className="relative z-10 pointer-events-auto underline-offset-4 hover:underline">{artist.name}</a></span>)}</span>
 }

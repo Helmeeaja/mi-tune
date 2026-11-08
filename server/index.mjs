@@ -1,8 +1,7 @@
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync } from 'node:fs'
-import { createYoutubeService } from './youtube.mjs'
-import { createArtistCatalog } from './artist-catalog.mjs'
+import { createAudiusService } from './audius.mjs'
 import { createApplication } from './app.mjs'
 import { createPodcastService } from './podcasts.mjs'
 import { restoreDatabase } from './persistence.mjs'
@@ -16,8 +15,8 @@ const vercelOrigin = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VE
 const origin = (process.env.APP_ORIGIN || (vercelOrigin ? `https://${vercelOrigin}` : '')).replace(/\/$/, '')
 await restoreDatabase(resolve(dataDir, 'mi-tune.sqlite'))
 let application
-const music = createYoutubeService({ dataDir, onEvent: job => application?.notifyJob(job) })
-const artistCatalog = createArtistCatalog({ dataDir })
+const music = createAudiusService()
+const artistCatalog = music.catalogue
 const podcastService = createPodcastService({ dataDir })
 application = await createApplication({ dataDir, distDir: resolve(root, 'dist'), musicService: music, artistCatalog, podcastService, origin: origin || undefined, googleOAuth:{clientId:process.env.GOOGLE_CLIENT_ID||googleFile.client_id||'',clientSecret:process.env.GOOGLE_CLIENT_SECRET||googleFile.client_secret||'',appOrigin:origin||'http://127.0.0.1:5173'},refreshIntervalMs: Number(process.env.CATALOG_REFRESH_MS) || 300000 })
 const persistTimer = setInterval(() => { application.persist?.().catch(error => console.error('Mi Tune: Blob persist failed:', error.message)) }, 10000)

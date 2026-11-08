@@ -7,7 +7,7 @@ export async function request(path, options = {}) {
   let body = options.body
   if (typeof mediaProof === 'string') {
     if (path.startsWith('/tracks/')) path += `${path.includes('?') ? '&' : '?'}proof=${encodeURIComponent(mediaProof)}`
-    if (body && typeof body === 'object' && /^yt:[A-Za-z0-9_-]{11}$/.test(body.trackId || '')) body = { ...body, mediaProof }
+    if (body && typeof body === 'object' && /^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(body.trackId || '')) body = { ...body, mediaProof }
   }
   if (body !== undefined) {
     headers.set('Content-Type', 'application/json')

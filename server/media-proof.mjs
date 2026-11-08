@@ -27,7 +27,10 @@ export function createMediaProof(secret, validateSong) {
       duration: song.duration,
       thumbnail: song.thumbnail,
       coverUrl: `/api/tracks/${encodeURIComponent(song.id)}/cover`,
-      sourceUrl: song.sourceUrl
+      sourceUrl: song.sourceUrl,
+      downloadAllowed: song.downloadAllowed,
+      genre: song.genre,
+      publishedAt: song.publishedAt
     }
     const payload = Buffer.from(JSON.stringify({ version: 1, track })).toString('base64url')
     if (payload.length > 8000) return null

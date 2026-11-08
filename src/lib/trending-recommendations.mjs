@@ -1,8 +1,19 @@
 import { isGlobalFeed } from './global-feed.mjs'
 import { rotateItems } from './recommendation-rotation.mjs'
 
-export function isSpotifyFeed(feed) {
+export function isTrendingFeed(feed) {
   return isGlobalFeed(feed) && Number.isFinite(feed.updatedAt) && feed.updatedAt > 0
+}
+
+export function readTrendingFeed(key, fallback, storage) {
+  try {
+    const value = JSON.parse(storage.getItem(key) || 'null')
+    return isTrendingFeed(value) ? { ...value, stale: true } : fallback
+  } catch { return fallback }
+}
+
+export function isSpotifyFeed(feed) {
+  return feed?.chartOrigin === 'spotify' && isTrendingFeed(feed)
 }
 
 export function readSpotifyFeed(key, fallback, storage) {
@@ -13,7 +24,7 @@ export function readSpotifyFeed(key, fallback, storage) {
 }
 
 export function chooseTrendingRecommendations(feed, seed = 0, recent = []) {
-  if (!isSpotifyFeed(feed)) return { tracks: [], mixes: [] }
+  if (!isTrendingFeed(feed)) return { tracks: [], mixes: [] }
   const tracks = rotateItems(feed.tracks, seed, recent, track => String(track.artists?.[0] || track.artist || track.id).normalize('NFKC').toLowerCase())
   const first = tracks.slice(0, 8)
   const second = tracks.slice(8, 16)

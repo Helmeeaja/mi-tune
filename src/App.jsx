@@ -19,7 +19,7 @@ import { defaultSettings, readSettings, saveSettings, applySettings, normalizeSe
 import { LanguageProvider } from './lib/i18n.jsx'
 import { translate, formatDate } from './lib/i18n.mjs'
 import { useAtmosphere } from './lib/useAtmosphere.js'
-import { isSpotifyFeed, readSpotifyFeed, chooseTrendingRecommendations } from './lib/trending-recommendations.mjs'
+import { isTrendingFeed, readTrendingFeed, chooseTrendingRecommendations } from './lib/trending-recommendations.mjs'
 import { rotatePodcastRecommendations } from './lib/recommendation-rotation.mjs'
 import { isPodcastEpisode, mediaPath, mediaDetailPath, podcastPathId, readPodcastProgress, savePodcastProgress, creatorEpisodes } from './lib/podcasts.mjs'
 import { PodcastEpisodeRow, PodcastResults } from './components/PodcastCards.jsx'
@@ -82,7 +82,7 @@ function trackFromPath() {
   if (!location.pathname.startsWith('/track/')) return null
   try {
     const id = decodeURIComponent(location.pathname.slice(7))
-    return /^yt:[A-Za-z0-9_-]{11}$/.test(id) ? id : null
+    return /^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(id) ? id : null
   } catch { return null }
 }
 
@@ -90,7 +90,7 @@ function catalogFromPath(kind) {
   if (!location.pathname.startsWith(`/${kind}/`)) return null
   try {
     const id = decodeURIComponent(location.pathname.slice(kind.length + 2))
-    return (kind === 'artist' ? /^UC[A-Za-z0-9_-]{22}$/ : /^MPRE[A-Za-z0-9_-]{4,124}$/).test(id) ? id : null
+    return (kind === 'artist' ? /^(?:UC[A-Za-z0-9_-]{22}|audius:user:[A-Za-z0-9]{1,64})$/ : /^(?:MPRE[A-Za-z0-9_-]{4,124}|audius:album:[A-Za-z0-9]{1,64})$/).test(id) ? id : null
   } catch { return null }
 }
 
@@ -164,8 +164,8 @@ export default function App() {
   const [sharedError,setSharedError]=useState('')
   const [sharedRetry,setSharedRetry]=useState(0)
   const [visibilityBusy,setVisibilityBusy]=useState(false)
-  const [discovery, setDiscovery] = useState(() => readSpotifyFeed('mi-tune-discovery:spotify-v1', { ...emptyTrending, updatedAt: 0, stale: true }, localStorage))
-  const [trending, setTrending] = useState(() => readSpotifyFeed('mi-tune-trending:spotify-v1', emptyTrending, localStorage))
+  const [discovery, setDiscovery] = useState(() => readTrendingFeed('mi-tune-discovery:audius-v1', { ...emptyTrending, updatedAt: 0, stale: true }, localStorage))
+  const [trending, setTrending] = useState(() => readTrendingFeed('mi-tune-trending:audius-v1', emptyTrending, localStorage))
   const [rotation, setRotation] = useState(()=>({ seed:Date.now(), music:read('mi-tune-recent-music',[]), creators:read('mi-tune-recent-creators',[]), episodes:read('mi-tune-recent-episodes',[]) }))
   const [trendingError, setTrendingError] = useState('')
   const [initialBusy, setInitialBusy] = useState(navigator.onLine)
@@ -279,7 +279,7 @@ export default function App() {
         setShowLoading(state.loading || Boolean(nativePending.current))
       }
       if (nativePending.current && state.track?.id !== nativePending.current) return
-      if (state.track && (isPodcastEpisode(state.track) || /^yt:[A-Za-z0-9_-]{11}$/.test(state.track.id || ''))) {
+      if (state.track && (isPodcastEpisode(state.track) || /^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(state.track.id || ''))) {
         const previous = currentRef.current
         const nextTrack = { ...known.current.get(state.track.id), ...state.track }
         remember([nextTrack])
@@ -549,12 +549,12 @@ export default function App() {
     try {
       const data = await request('/trending')
       if (!alive.current) return
-      if (!isSpotifyFeed(data)) throw new Error('Daftar trending belum bisa dimuat. Coba lagi nanti.')
+      if (!isTrendingFeed(data)) throw new Error('Daftar trending belum bisa dimuat. Coba lagi nanti.')
       setTrending(data)
       setDiscovery(data)
       remember(data.tracks)
       setTrendingError('')
-      try { localStorage.setItem('mi-tune-trending:spotify-v1', JSON.stringify(data)) } catch { }
+      try { localStorage.setItem('mi-tune-trending:audius-v1', JSON.stringify(data)) } catch { }
     } catch (error) {
       if (!alive.current) return
       setTrendingError(errorMessage(error))
@@ -574,10 +574,10 @@ export default function App() {
     if (navigator.onLine) {
       request('/discover').then(data => {
         if (!alive.current) return
-        if (!isSpotifyFeed(data)) throw new Error('Daftar trending belum bisa dimuat. Coba lagi nanti.')
+        if (!isTrendingFeed(data)) throw new Error('Daftar trending belum bisa dimuat. Coba lagi nanti.')
         setDiscovery(data)
         remember(data.tracks)
-        try { localStorage.setItem('mi-tune-discovery:spotify-v1', JSON.stringify(data)) } catch { }
+        try { localStorage.setItem('mi-tune-discovery:audius-v1', JSON.stringify(data)) } catch { }
       }).catch(error => { if (alive.current) notify(errorMessage(error), 'error') }).finally(() => { if (alive.current) setInitialBusy(false) })
       request('/auth/me').then(data => { if (alive.current) setUser(data.user) }).catch(error => { if (alive.current) notify(errorMessage(error), 'error') }).finally(() => { if (alive.current) setAuthReady(true) })
       loadTrending()
@@ -664,7 +664,7 @@ export default function App() {
       request('/discover').then(data => {
         setDiscovery(data)
         remember(data.tracks)
-        try { localStorage.setItem('mi-tune-discovery:spotify-v1', JSON.stringify(data)) } catch { }
+        try { localStorage.setItem('mi-tune-discovery:audius-v1', JSON.stringify(data)) } catch { }
       }).catch(() => {})
     })
     events.addEventListener('library', () => { if (user) refreshLibrary().catch(() => {}) })
@@ -850,7 +850,7 @@ export default function App() {
 
   function openArtist(artist) {
     const id = typeof artist === 'string' ? artist : artist?.id
-    if (!/^UC[A-Za-z0-9_-]{22}$/.test(id || '')) { notify('Profil artis belum tersedia dari sumber.'); return }
+    if (!/^(?:UC[A-Za-z0-9_-]{22}|audius:user:[A-Za-z0-9]{1,64})$/.test(id || '')) { notify('Profil artis belum tersedia dari sumber.'); return }
     const url = `/artist/${encodeURIComponent(id)}`
     if (location.pathname !== url) history.pushState({ miTune: true }, '', url)
     setArtistId(id)
@@ -866,7 +866,7 @@ export default function App() {
 
   function openAlbum(album) {
     const id = typeof album === 'string' ? album : album?.id
-    if (!/^MPRE[A-Za-z0-9_-]{4,124}$/.test(id || '')) { notify('Album belum tersedia dari sumber.'); return }
+    if (!/^(?:MPRE[A-Za-z0-9_-]{4,124}|audius:album:[A-Za-z0-9]{1,64})$/.test(id || '')) { notify('Album belum tersedia dari sumber.'); return }
     const url = `/album/${encodeURIComponent(id)}`
     if (location.pathname !== url) history.pushState({ miTune: true }, '', url)
     setAlbumId(id)
@@ -984,7 +984,7 @@ export default function App() {
       const data = await request('/discover/refresh', { method: 'POST' })
       setDiscovery(data)
       remember(data.tracks)
-      try { localStorage.setItem('mi-tune-discovery:spotify-v1', JSON.stringify(data)) } catch { }
+      try { localStorage.setItem('mi-tune-discovery:audius-v1', JSON.stringify(data)) } catch { }
       await loadTrending()
       notify('Katalog berhasil diperbarui.')
     } catch (error) { notify(errorMessage(error), 'error') } finally { setRefreshBusy(false) }
@@ -1007,6 +1007,10 @@ export default function App() {
 
   async function play(track, list = queue, toggleSame = true) {
     if (!track) return
+    if (track.type === 'song' && track.source === 'youtube-music' && !downloads.some(item => item.available !== false && item.track.id === track.id)) {
+      notify('Lagu ini tersimpan dari sumber lama. Cari ulang di Audius; koleksi aslinya tetap disimpan.')
+      return
+    }
     if (settingsRef.current.rememberHistory && isPodcastEpisode(currentRef.current)) savePodcastProgress(currentRef.current, audio.current?.currentTime || position, duration, localStorage)
     openTrack(track)
     if (nativePlayer) {

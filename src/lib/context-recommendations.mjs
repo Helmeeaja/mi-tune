@@ -5,7 +5,7 @@ export function selectContextTracks(value, offset = 0) {
   const first = []
   const rest = []
   for (const track of tracks || []) {
-    if (!/^yt:[A-Za-z0-9_-]{11}$/.test(track?.id) || typeof track.title !== 'string' || typeof track.artist !== 'string' || seen.has(track.id)) continue
+    if (!/^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(track?.id) || typeof track.title !== 'string' || typeof track.artist !== 'string' || seen.has(track.id)) continue
     seen.add(track.id)
     const artist = track.artistRefs?.[0]?.id || track.artist.toLocaleLowerCase('en')
     if (artists.has(artist)) rest.push(track)

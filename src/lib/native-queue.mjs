@@ -1,7 +1,7 @@
 import { isPodcastEpisode } from './podcasts.mjs'
 
 export function nativeTrack(track) {
-  if (!track || (!isPodcastEpisode(track) && !/^yt:[A-Za-z0-9_-]{11}$/.test(track.id || ''))) throw new Error('Audio tidak valid.')
+  if (!track || (!isPodcastEpisode(track) && !/^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(track.id || ''))) throw new Error('Audio tidak valid.')
   return {
     id: track.id,
     type: track.type,
@@ -27,7 +27,7 @@ export function nativeTrack(track) {
 }
 
 export function nativeQueue(tracks, current) {
-  const unique = [...new Map((tracks || []).filter(track => isPodcastEpisode(track) || /^yt:[A-Za-z0-9_-]{11}$/.test(track?.id || '')).map(track => [track.id, track])).values()]
+  const unique = [...new Map((tracks || []).filter(track => isPodcastEpisode(track) || /^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(track?.id || '')).map(track => [track.id, track])).values()]
   const index = unique.findIndex(track => track.id === current?.id)
   if (index < 0) return current ? [nativeTrack(current)] : []
   if (unique.length <= 200) return unique.map(nativeTrack)

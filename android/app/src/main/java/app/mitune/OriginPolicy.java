@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 public final class OriginPolicy {
-    private static final Pattern SONG = Pattern.compile("yt:[A-Za-z0-9_-]{11}");
+    private static final Pattern SONG = Pattern.compile("(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})");
     private static final Pattern EPISODE = Pattern.compile("podcast:yt:[A-Za-z0-9_-]{11}");
 
     private OriginPolicy() {}

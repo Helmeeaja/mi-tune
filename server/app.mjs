@@ -32,7 +32,15 @@ function fail(status, code, message) {
 
 function publicUser(row) { return publicProfile(row) }
 function digest(token) { return createHash('sha256').update(token).digest('hex') }
-function validTrack(track) { return track && /^yt:[A-Za-z0-9_-]{11}$/.test(track.id) && track.source === 'youtube-music' && track.type === 'song' && (track.musicType === 'MUSIC_VIDEO_TYPE_ATV' || (track.musicType === 'MUSIC_VIDEO_TYPE_OMV' && track.catalogueType === 'album-track' && /^MPRE[A-Za-z0-9_-]{4,124}$/.test(track.albumId || ''))) && Array.isArray(track.artists) && track.artists.length > 0 }
+function validTrack(track) {
+  if (track?.source === 'audius') return /^audius:[A-Za-z0-9]{1,64}$/.test(track.id || '') && track.type === 'song' && track.musicType === 'FULL_TRACK' && typeof track.title === 'string' && track.title.trim().length > 0 && typeof track.artist === 'string' && track.artist.trim().length > 0 && Number.isFinite(track.duration) && track.duration > 0 && Array.isArray(track.artists) && track.artists.length > 0 && track.artists.every(name => typeof name === 'string' && name.trim()) && Array.isArray(track.artistRefs) && track.artistRefs.length > 0 && track.artistRefs.every(artist => /^audius:user:[A-Za-z0-9]{1,64}$/.test(artist.id || ''))
+  return track && /^yt:[A-Za-z0-9_-]{11}$/.test(track.id) && track.source === 'youtube-music' && track.type === 'song' && (track.musicType === 'MUSIC_VIDEO_TYPE_ATV' || (track.musicType === 'MUSIC_VIDEO_TYPE_OMV' && track.catalogueType === 'album-track' && /^MPRE[A-Za-z0-9_-]{4,124}$/.test(track.albumId || ''))) && Array.isArray(track.artists) && track.artists.length > 0
+}
+
+function validChart(value, provider) {
+  if (provider === 'audius') return value?.region === 'ZZ' && value.chartVersion === 4 && value.chartOrigin === 'audius' && value.chartProvider === 'audius' && value.chartId === 'audius:trending:week' && value.sourceUrl === 'https://audius.co/explore' && Number.isFinite(value.updatedAt) && Array.isArray(value.tracks) && value.tracks.length > 0 && value.tracks.every(track => track.source === 'audius' && validTrack(track))
+  return value?.region === 'ZZ' && value.chartVersion === 3 && value.chartOrigin === 'spotify' && value.chartId === '37i9dQZEVXbMDoHDwVN2tF' && value.sourceUrl === 'https://open.spotify.com/playlist/37i9dQZEVXbMDoHDwVN2tF' && Array.isArray(value.tracks) && value.tracks.every(track => validTrack(track) && /^spotify:track:[A-Za-z0-9]{22}$/.test(track.spotifyUri || ''))
+}
 
 export function selectDiscoveryTracks(tracks) {
   const ids = new Set()
@@ -50,23 +58,23 @@ export function selectDiscoveryTracks(tracks) {
 }
 
 function checkedArtistId(id) {
-  if (typeof id !== 'string' || !/^UC[A-Za-z0-9_-]{22}$/.test(id)) throw fail(400, 'INVALID_ARTIST', 'Identitas artis tidak valid.')
+  if (typeof id !== 'string' || !/^(?:UC[A-Za-z0-9_-]{22}|audius:user:[A-Za-z0-9]{1,64})$/.test(id)) throw fail(400, 'INVALID_ARTIST', 'Identitas artis tidak valid.')
   return id
 }
 
 function checkedAlbumId(id) {
-  if (typeof id !== 'string' || !/^MPRE[A-Za-z0-9_-]{4,124}$/.test(id)) throw fail(400, 'INVALID_ALBUM', 'Identitas album tidak valid.')
+  if (typeof id !== 'string' || !/^(?:MPRE[A-Za-z0-9_-]{4,124}|audius:album:[A-Za-z0-9]{1,64})$/.test(id)) throw fail(400, 'INVALID_ALBUM', 'Identitas album tidak valid.')
   return id
 }
 
 function artistSummary(value) {
-  if (!value || !/^UC[A-Za-z0-9_-]{22}$/.test(value.id) || typeof value.name !== 'string' || !value.name.trim()) throw fail(502, 'INVALID_ARTIST_RESPONSE', 'Data artis dari sumber belum dapat divalidasi.')
-  return { id: value.id, name: value.name, thumbnail: typeof value.thumbnail === 'string' ? value.thumbnail : '', coverUrl: `/api/artists/${encodeURIComponent(value.id)}/cover`, source: 'youtube-music' }
+  if (!value || !/^(?:UC[A-Za-z0-9_-]{22}|audius:user:[A-Za-z0-9]{1,64})$/.test(value.id) || typeof value.name !== 'string' || !value.name.trim()) throw fail(502, 'INVALID_ARTIST_RESPONSE', 'Data artis dari sumber belum dapat divalidasi.')
+  return { id: value.id, name: value.name, thumbnail: typeof value.thumbnail === 'string' ? value.thumbnail : '', coverUrl: `/api/artists/${encodeURIComponent(value.id)}/cover`, source: value.id.startsWith('audius:user:') ? 'audius' : 'youtube-music' }
 }
 
 function albumSummary(value) {
-  if (!value || !/^MPRE[A-Za-z0-9_-]{4,124}$/.test(value.id) || typeof value.title !== 'string' || !value.title.trim()) throw fail(502, 'INVALID_ALBUM_RESPONSE', 'Data album dari sumber belum dapat divalidasi.')
-  return { id: value.id, title: value.title, year: value.year, type: value.type, thumbnail: typeof value.thumbnail === 'string' ? value.thumbnail : '', coverUrl: `/api/albums/${encodeURIComponent(value.id)}/cover`, artists: Array.isArray(value.artists) ? value.artists : [] }
+  if (!value || !/^(?:MPRE[A-Za-z0-9_-]{4,124}|audius:album:[A-Za-z0-9]{1,64})$/.test(value.id) || typeof value.title !== 'string' || !value.title.trim()) throw fail(502, 'INVALID_ALBUM_RESPONSE', 'Data album dari sumber belum dapat divalidasi.')
+  return { id: value.id, title: value.title, year: value.year, type: value.type, thumbnail: typeof value.thumbnail === 'string' ? value.thumbnail : '', coverUrl: `/api/albums/${encodeURIComponent(value.id)}/cover`, artists: Array.isArray(value.artists) ? value.artists : [], source: value.id.startsWith('audius:album:') ? 'audius' : 'youtube-music' }
 }
 
 async function parseBody(req, maximum = 32768) {
@@ -200,7 +208,7 @@ export async function createApplication(options) {
   async function body(req, maximum = 32768) {
     const value = await parseBody(req, maximum)
     if (typeof value.mediaProof === 'string' && typeof value.trackId === 'string') {
-      if (!/^yt:[A-Za-z0-9_-]{11}$/.test(value.trackId)) throw fail(400, 'INVALID_TRACK', 'Identitas lagu tidak valid.')
+      if (!/^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(value.trackId)) throw fail(400, 'INVALID_TRACK', 'Identitas lagu tidak valid.')
       const song = mediaProof.verify(value.mediaProof, value.trackId)
       if (!song) throw fail(400, 'INVALID_MEDIA_PROOF', 'Informasi lagu perlu diperbarui. Cari atau buka lagu ini lagi.')
       if (!db.prepare('SELECT 1 FROM tracks WHERE id=?').get(song.id)) recordTracks([music.lookup(song.id) || song])
@@ -241,7 +249,7 @@ export async function createApplication(options) {
     }
     const inferred = new Set()
     for (const song of tracks.slice(0, 3)) for (const value of song.artistRefs || []) {
-      if (!/^UC[A-Za-z0-9_-]{22}$/.test(value.id || '')) continue
+      if (!/^(?:UC[A-Za-z0-9_-]{22}|audius:user:[A-Za-z0-9]{1,64})$/.test(value.id || '')) continue
       inferred.add(value.id)
       if (!artists.has(value.id)) artists.set(value.id, artistSummary({ ...value, thumbnail: '' }))
     }
@@ -275,7 +283,7 @@ export async function createApplication(options) {
 
   async function artistProfile(id) {
     const profile = await requireCatalogue().artist(checkedArtistId(id))
-    if (profile.id !== id || profile.source !== 'youtube-music') throw fail(502, 'INVALID_ARTIST_RESPONSE', 'Identitas artis dari sumber tidak sesuai.')
+    if (profile.id !== id || profile.source !== (id.startsWith('audius:') ? 'audius' : 'youtube-music')) throw fail(502, 'INVALID_ARTIST_RESPONSE', 'Identitas artis dari sumber tidak sesuai.')
     const value = { ...profile, ...recordArtist(profile), tracks: (profile.tracks || []).filter(validTrack), albums: (profile.albums || []).map(albumSummary), singles: (profile.singles || []).map(albumSummary), related: (profile.related || []).map(artistSummary) }
     music.register?.(value.tracks)
     recordTracks(value.tracks)
@@ -284,7 +292,7 @@ export async function createApplication(options) {
 
   async function albumProfile(id) {
     const profile = await requireCatalogue().album(checkedAlbumId(id))
-    if (profile.id !== id || profile.source !== 'youtube-music') throw fail(502, 'INVALID_ALBUM_RESPONSE', 'Identitas album dari sumber tidak sesuai.')
+    if (profile.id !== id || profile.source !== (id.startsWith('audius:') ? 'audius' : 'youtube-music')) throw fail(502, 'INVALID_ALBUM_RESPONSE', 'Identitas album dari sumber tidak sesuai.')
     const value = { ...profile, ...albumSummary(profile), tracks: (profile.tracks || []).filter(validTrack) }
     music.register?.(value.tracks)
     recordTracks(value.tracks)
@@ -292,11 +300,11 @@ export async function createApplication(options) {
   }
 
   function track(id) {
-    if (!/^yt:[A-Za-z0-9_-]{11}$/.test(id)) throw fail(400, 'INVALID_TRACK', 'Identitas lagu tidak valid.')
+    if (!/^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(id)) throw fail(400, 'INVALID_TRACK', 'Identitas lagu tidak valid.')
     const current = music.lookup(id)
     const stored = db.prepare('SELECT data FROM tracks WHERE id=?').get(id)
     const result = current || (stored ? JSON.parse(stored.data) : null)
-    if (!validTrack(result)) throw fail(404, 'SONG_NOT_FOUND', 'Lagu belum ditemukan di katalog YouTube Music.')
+    if (!validTrack(result)) throw fail(404, 'SONG_NOT_FOUND', 'Lagu belum ditemukan di katalog musik Mi Tune.')
     return result
   }
 
@@ -327,10 +335,10 @@ export async function createApplication(options) {
     refreshPromise = (async () => {
       if (typeof music.trending !== 'function') throw fail(503, 'GLOBAL_CHART_UNAVAILABLE', 'Chart musik global belum tersedia.')
       const chart = await music.trending()
-      if (chart.region !== 'ZZ' || chart.chartVersion !== 3 || chart.chartOrigin !== 'spotify' || chart.chartId !== '37i9dQZEVXbMDoHDwVN2tF') throw fail(503, 'INVALID_DISCOVERY_REGION', 'Daftar Spotify global belum tersedia.')
+      if (!validChart(chart, music.provider)) throw fail(503, 'INVALID_DISCOVERY_REGION', 'Daftar trending dari sumber musik belum tersedia.')
       const tracks = selectDiscoveryTracks(chart.tracks)
       recordTracks(tracks)
-      const value = { ...chart, tracks, region: 'ZZ', chartCountry: 'ZZ', feedVersion: 3, stale: Boolean(chart.stale) }
+      const value = { ...chart, tracks, region: 'ZZ', chartCountry: 'ZZ', feedVersion: music.provider === 'audius' ? 4 : 3, stale: Boolean(chart.stale) }
       db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('discovery', JSON.stringify(value))
       emit('catalogue', { updatedAt: value.updatedAt, count: tracks.length })
       return value
@@ -359,8 +367,8 @@ export async function createApplication(options) {
     if (['lh3.googleusercontent.com', 'yt3.googleusercontent.com'].includes(url.hostname)) url.pathname = url.pathname.replace(/=w\d+-h\d+(?=-|$)/, '=w600-h600')
     let response
     for (let attempts = 0; attempts < 3; attempts += 1) {
-      if (url.protocol !== 'https:' || url.username || url.password || url.port || !['lh3.googleusercontent.com', 'yt3.googleusercontent.com', 'i.ytimg.com'].includes(url.hostname)) throw fail(400, 'INVALID_COVER', 'Alamat cover tidak diizinkan.')
-      try { response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(8000) }) }
+      if (url.protocol !== 'https:' || url.username || url.password || url.port || (song.source !== 'audius' && !['lh3.googleusercontent.com', 'yt3.googleusercontent.com', 'i.ytimg.com'].includes(url.hostname))) throw fail(400, 'INVALID_COVER', 'Alamat cover tidak diizinkan.')
+      try { response = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'MiTune/1.0' }, signal: AbortSignal.timeout(8000) }) }
       catch { throw fail(502, 'COVER_UNAVAILABLE', 'Cover tidak dapat dimuat.') }
       if ([301, 302, 303, 307, 308].includes(response.status)) { url = new URL(response.headers.get('location'), url); continue }
       break
@@ -436,14 +444,14 @@ export async function createApplication(options) {
       try { pathname = decodeURIComponent(url.pathname) } catch { throw fail(400, 'INVALID_URL', 'Alamat tidak valid.') }
       if (pathname.includes('\0') || pathname.split('/').includes('..')) throw fail(403, 'FORBIDDEN_PATH', 'Alamat tidak diizinkan.')
       const method = req.method
-      const mediaRoute = /^\/api\/tracks\/(yt:[A-Za-z0-9_-]{11})(?:\/(?:cover|stream|playback|audio|download|lyrics))?$/.exec(pathname)
+      const mediaRoute = /^\/api\/tracks\/(yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})(?:\/(?:cover|stream|playback|audio|download|lyrics))?$/.exec(pathname)
       const proof = url.searchParams.get('proof')
       if (mediaRoute && proof) {
         const song = mediaProof.verify(proof, mediaRoute[1])
         if (!song) throw fail(400, 'INVALID_MEDIA_PROOF', 'Informasi lagu perlu diperbarui. Cari atau buka lagu ini lagi.')
         if (!music.lookup(song.id)) music.register?.([song])
       }
-      if (pathname === '/api/health' && method === 'GET') return send(res, { status: 'ok', source: 'youtube-music', songsOnly: true, podcastsAvailable: Boolean(podcasts) })
+      if (pathname === '/api/health' && method === 'GET') return send(res, { status: 'ok', source: music.provider || 'youtube-music', songsOnly: true, podcastsAvailable: Boolean(podcasts) })
       if (!pathname.startsWith('/api/')) {
         if (!['GET', 'HEAD'].includes(method)) throw fail(405, 'METHOD_NOT_ALLOWED', 'Metode tidak diizinkan.')
         return staticFile(pathname, req, res)
@@ -630,7 +638,7 @@ export async function createApplication(options) {
         if (!saved) return send(res, await refreshDiscovery())
         let value
         try { value = JSON.parse(saved.value) } catch { return send(res, await refreshDiscovery()) }
-        if (value.feedVersion !== 3 || value.region !== 'ZZ' || value.chartVersion !== 3 || value.chartOrigin !== 'spotify' || value.chartId !== '37i9dQZEVXbMDoHDwVN2tF' || value.sourceUrl !== 'https://open.spotify.com/playlist/37i9dQZEVXbMDoHDwVN2tF' || !Array.isArray(value.tracks) || !value.tracks.every(item => validTrack(item) && /^spotify:track:[A-Za-z0-9]{22}$/.test(item.spotifyUri || ''))) return send(res, await refreshDiscovery())
+        if (value.feedVersion !== (music.provider === 'audius' ? 4 : 3) || !validChart(value, music.provider)) return send(res, await refreshDiscovery())
         if (Date.now() - value.updatedAt > refreshIntervalMs) {
           refreshDiscovery().catch(() => {})
           return send(res, { ...value, stale: true })
@@ -646,9 +654,19 @@ export async function createApplication(options) {
       }
       if (pathname === '/api/search/discovery' && method === 'GET') { rate(req, 'search', 30); return send(res, await combinedSearch(url.searchParams.get('q'))) }
       if (pathname === '/api/search' && method === 'GET') { rate(req, 'search', 30); const tracks = await music.search(url.searchParams.get('q')); recordTracks(tracks); return send(res, { tracks }) }
-      const songRoute = /^\/api\/tracks\/(yt:[A-Za-z0-9_-]{11})(?:\/(cover|audio|stream|download|lyrics))?$/.exec(pathname)
+      const songRoute = /^\/api\/tracks\/(yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})(?:\/(cover|audio|stream|download|lyrics))?$/.exec(pathname)
       if (songRoute && ['GET', 'HEAD'].includes(method)) {
+        if (music.provider === 'audius' && /^audius:[A-Za-z0-9]{1,64}$/.test(songRoute[1]) && !music.lookup(songRoute[1])) recordTracks([await music.metadata(songRoute[1])])
         const song = track(songRoute[1])
+        if (music.provider === 'audius' && ['audio', 'stream', 'download'].includes(songRoute[2])) {
+          rate(req, 'stream', 60)
+          const download = songRoute[2] !== 'stream'
+          if (download) {
+            requireUser(who)
+            if (url.searchParams.get('rightsConfirmed') !== '1') throw fail(400, 'RIGHTS_CONFIRMATION_REQUIRED', 'Konfirmasikan izin mengunduh audio ini.')
+          }
+          return await music.stream(song.id, req, res, { download })
+        }
         if (songRoute[2] === 'cover') return await cover(song, res)
         if (songRoute[2] === 'audio') return audio(song.id, req, res)
         if (songRoute[2] === 'stream') {
@@ -720,6 +738,10 @@ export async function createApplication(options) {
         if (purpose === 'download') requireUser(who)
         if (purpose === 'download' && value.rightsConfirmed !== true) throw fail(400, 'RIGHTS_CONFIRMATION_REQUIRED', 'Konfirmasikan izin mengunduh audio ini.')
         track(value.trackId)
+        if (music.provider === 'audius') {
+          if (purpose === 'download') throw fail(409, 'AUDIUS_DIRECT_DOWNLOAD', 'Unduh lagu melalui menu unduhan; izin artis tetap diperlukan.')
+          return send(res, await music.preload(value.trackId))
+        }
         const job = await music.prepare(value.trackId)
         let owners = jobOwners.get(job.id)
         if (!owners) { owners = new Set(); jobOwners.set(job.id, owners) }

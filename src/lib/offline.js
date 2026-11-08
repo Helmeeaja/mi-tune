@@ -81,7 +81,8 @@ export async function downloadTrack(track, lyrics = null, options = {}) {
   const { owner = 'guest', onProgress, signal } = options
   if (owner === 'guest') throw new Error('Masuk dulu untuk menyimpan lagu offline.')
   if (!('caches' in globalThis) || !('serviceWorker' in navigator)) throw new Error('Offline membutuhkan browser yang mendukung PWA dan origin HTTPS atau localhost.')
-  if (!/^yt:[A-Za-z0-9_-]{11}$/.test(track?.id || '') || track.type !== 'song') throw new Error('Hanya lagu terverifikasi yang dapat diunduh.')
+  if (!/^(?:yt:[A-Za-z0-9_-]{11}|audius:[A-Za-z0-9]{1,64})$/.test(track?.id || '') || track.type !== 'song') throw new Error('Hanya lagu terverifikasi yang dapat diunduh.')
+  if (track.source === 'audius' && track.downloadAllowed !== true) throw new Error('Artis tidak mengizinkan unduhan bebas untuk lagu ini. Lagu tetap dapat diputar online.')
   const url = `/api/tracks/${encodeURIComponent(track.id)}/audio`
   const query = new URLSearchParams({ rightsConfirmed: '1' })
   if (typeof track.playbackToken === 'string') query.set('proof', track.playbackToken)

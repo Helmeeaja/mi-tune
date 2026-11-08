@@ -4,7 +4,7 @@ Mi Tune is a warm, terracotta-toned music and podcast application built with Rea
 
 Production URL: https://mi-tune.vercel.app
 
-The music catalogue uses YouTube Music metadata through `ytmusicapi`. Audio extraction uses `yt-dlp`; this is an unofficial integration, not an official YouTube audio API. Spotify charts are used for ranking references only, never as an audio provider. Production playback and device installation must be checked on the deployed build; a successful build does not prove that the upstream audio provider accepts the host.
+The music catalogue now uses the public Audius API for full, ungated audio tracks, artist profiles, albums, search and weekly global trending. Audio is streamed through Mi Tune's same-origin, range-aware proxy; it does not use YouTube extraction, a video player, or preview clips. The catalogue differs from YouTube Music and prioritizes tracks published on Audius. Existing YouTube Music library entries are preserved under their original identities, not replaced with covers; cached authorized offline copies remain usable. Online downloads are allowed only when the Audius artist enables free downloads. The separate podcast service still uses YouTube metadata and `yt-dlp`, and retains its upstream limitations. No paid Audius key is required for public listening. A successful build or API byte probe does not prove playback on every browser or host.
 
 ## Technologies
 
