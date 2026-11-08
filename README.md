@@ -4,6 +4,12 @@ Mi Tune adalah aplikasi musik dan podcast untuk web/PWA, dengan APK Android seba
 
 Aplikasi ini tidak memakai login/cookies akun YouTube dan tidak melewati DRM atau login wall.
 
+## Demo
+
+- Web/PWA: <https://mi-tune.vercel.app>
+- Pencarian, chart, akun, playlist, podcast, dan PWA berjalan di Vercel.
+- Streaming audio dari YouTube dapat gagal di Vercel karena YouTube memblokir IP datacenter. Detail dan solusinya ada di [Catatan penting deployment Vercel](#catatan-penting-deployment-vercel).
+
 ## Fitur
 
 - Pencarian lagu YouTube Music dengan validasi `songs`, bukan video acak.
@@ -191,8 +197,10 @@ Semua endpoint same-origin di `/api`. Respons sukses `{ "data": ... }`; error `{
 
 ## Keamanan dan data
 
-- `.env`, `data/`, database SQLite, token, dan file kredensial sudah di-ignore oleh Git.
+- `.env`, `.env.local`, `data/`, database SQLite, token, dan file kredensial sudah di-ignore oleh Git.
 - Jangan commit `.env` atau JSON client OAuth. Gunakan `.env.example` sebagai template.
+- File yang sengaja **tidak** di-commit: `.env`, `.env.local`, file OAuth/cookies/token, `data/` (SQLite + cache media), `dist/`, `node_modules/`, `.venv/`, `.vercel/`, hasil test (`test-results/`, `playwright-report/`, `coverage/`), dan artefak build Android (`*.apk`, `*.aab`, `android/build/`).
+- File yang **di-commit** adalah source, konfigurasi, dokumentasi, aset publik, serta `Dockerfile`/`Dockerfile.vercel`/`vercel.json` yang dibutuhkan untuk build dan deploy.
 - Di Vercel, data pengguna disimpan di SQLite sementara dan disinkronkan ke Blob store private. Backup rutin tetap disarankan.
 - Integrasi YouTube Music/`yt-dlp` bersifat tidak resmi. Gunakan hanya untuk konten yang kamu miliki atau punya izin, dan patuhi ketentuan layanan penyedia.
 
